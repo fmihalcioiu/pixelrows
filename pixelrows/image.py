@@ -1,8 +1,10 @@
-"""A grid of RGBA pixels to draw on."""
+"""A grid of RGBA pixels to draw on and save as a PNG."""
 from __future__ import annotations
 
+import os
 import struct
 
+from . import png
 from .errors import PixelRowsError
 from .palette import RGB, as_rgb
 
@@ -136,6 +138,14 @@ class Image:
     def colours(self) -> list[RGBA]:
         """Every distinct pixel value as (r, g, b, a), in order of first appearance, row by row."""
         return list(dict.fromkeys(struct.iter_unpack("4B", self.data)))
+
+    def to_png(self) -> bytes:
+        """The image as the bytes of a PNG file."""
+        return png.encode_png(self.width, self.height, self.data)
+
+    def save(self, path: str | os.PathLike[str]) -> None:
+        """Writes the image to `path` as a PNG file. Folders on the way that do not exist are made."""
+        png.write_png(path, self.width, self.height, self.data)
 
     def __eq__(self, other: object) -> bool:
         return (

@@ -1,9 +1,13 @@
 import math
+import struct
+import tempfile
 import unittest
 from fractions import Fraction
+from pathlib import Path
 
 from pixelrows.errors import PixelRowsError
 from pixelrows.image import Image
+from pixelrows.png import encode_png
 
 CLEAR = (0, 0, 0, 0)
 
@@ -631,6 +635,46 @@ class EqualityTest(unittest.TestCase):
         for other in (None, bytearray(4), bytes(4), [CLEAR], "image"):
             with self.subTest(other=other):
                 self.assertNotEqual(image, other)
+
+
+class PngTest(unittest.TestCase):
+    def setUp(self):
+        self.image = drawn("rg.", "bkw")
+        self.image.set(2, 0, WHITE, 128)
+
+    def test_to_png_is_encode_png_of_its_bytes(self):
+        self.assertEqual(self.image.to_png(), encode_png(3, 2, self.image.data))
+        self.assertEqual(self.image.to_png(), encode_png(3, 2, bytes(self.image.data)))
+
+    def test_to_png_is_a_png_of_its_size(self):
+        data = self.image.to_png()
+        self.assertIsInstance(data, bytes)
+        self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(struct.unpack(">II", data[16:24]), (3, 2))
+
+    def test_to_png_leaves_the_image_as_it_is(self):
+        before = bytes(self.image.data)
+        self.image.to_png()
+        self.assertEqual(bytes(self.image.data), before)
+
+    def test_save_writes_the_png(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "image.png"
+            self.image.save(path)
+            self.assertEqual(path.read_bytes(), self.image.to_png())
+
+    def test_save_creates_parent_folders(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "out" / "sheets" / "image.png"
+            self.image.save(path)
+            self.assertTrue(path.is_file())
+            self.assertEqual(path.read_bytes(), self.image.to_png())
+
+    def test_save_takes_a_path_as_text(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "sub" / "image.png"
+            self.image.save(str(path))
+            self.assertEqual(path.read_bytes(), self.image.to_png())
 
 
 if __name__ == "__main__":
