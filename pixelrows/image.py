@@ -14,6 +14,34 @@ def _whole(what: str, value: int) -> int:
     return value
 
 
+def _alpha(value: int) -> int:
+    """`value` if it is a whole number from 0 to 255."""
+    if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 255:
+        raise PixelRowsError(f"alpha must be a whole number from 0 to 255, got {value!r}")
+    return value
+
+
+def _over(sr: int, sg: int, sb: int, sa: int, dr: int, dg: int, db: int, da: int) -> RGBA:
+    """
+    One pixel laid over another (source-over), every channel rounded to the nearest whole number.
+
+    The first four numbers are the pixel on top, the last four the one underneath.
+    """
+    if sa == 255:
+        return sr, sg, sb, 255
+    if sa == 0:
+        return dr, dg, db, da
+    under = da * (255 - sa)
+    total = sa * 255 + under
+    top = sa * 255
+    return (
+        (2 * (sr * top + dr * under) + total) // (2 * total),
+        (2 * (sg * top + dg * under) + total) // (2 * total),
+        (2 * (sb * top + db * under) + total) // (2 * total),
+        (2 * total + 255) // 510,
+    )
+
+
 class Image:
     """
     Pixels in a bytearray, four bytes each (red, green, blue, alpha), row by row from the top.
@@ -46,27 +74,46 @@ class Image:
         data = self.data
         return data[at], data[at + 1], data[at + 2], data[at + 3]
 
-    def set(self, x: int, y: int, colour: str | RGB) -> None:
+    def set(self, x: int, y: int, colour: str | RGB, alpha: int = 255) -> None:
         """Lays one pixel of `colour` over (x, y). Outside the image it does nothing."""
         r, g, b = as_rgb(colour)
-        if not (0 <= x < self.width and 0 <= y < self.height):
+        alpha = _alpha(alpha)
+        if alpha == 0 or not (0 <= x < self.width and 0 <= y < self.height):
             return
         at = (y * self.width + x) * 4
         data = self.data
-        data[at:at + 4] = bytes((r, g, b, 255))
+        data[at:at + 4] = bytes(_over(r, g, b, alpha, data[at], data[at + 1], data[at + 2], data[at + 3]))
 
-    def fill(self, x: int, y: int, w: int, h: int, colour: str | RGB) -> None:
+    def fill(self, x: int, y: int, w: int, h: int, colour: str | RGB, alpha: int = 255) -> None:
         """Lays a `w` by `h` rectangle of `colour` with its top-left corner at (x, y), clipped to the image."""
         r, g, b = as_rgb(colour)
+        alpha = _alpha(alpha)
         left, top = max(x, 0), max(y, 0)
         right, bottom = min(x + w, self.width), min(y + h, self.height)
-        if left >= right or top >= bottom:
+        if alpha == 0 or left >= right or top >= bottom:
             return
         data = self.data
         for row_y in range(top, bottom):
             for col_x in range(left, right):
                 at = (row_y * self.width + col_x) * 4
-                data[at:at + 4] = bytes((r, g, b, 255))
+                data[at:at + 4] = bytes(_over(r, g, b, alpha, *data[at:at + 4]))
+
+    def blit(self, other: Image, x: int, y: int) -> None:
+        """Lays `other` over this image with its top-left corner at (x, y), clipped to this image."""
+        if not isinstance(other, Image):
+            raise PixelRowsError(f"blit takes an Image, got {type(other).__name__}")
+        left, top = max(x, 0), max(y, 0)
+        right, bottom = min(x + other.width, self.width), min(y + other.height, self.height)
+        if left >= right or top >= bottom:
+            return
+        # An image laid over itself is read as it was before the call.
+        source = bytes(other.data) if other is self else other.data
+        data = self.data
+        for row_y in range(top, bottom):
+            for col_x in range(left, right):
+                src = ((row_y - y) * other.width + (col_x - x)) * 4
+                dst = (row_y * self.width + col_x) * 4
+                data[dst:dst + 4] = bytes(_over(*source[src:src + 4], *data[dst:dst + 4]))
 
     def copy(self) -> Image:
         """A new image with the same pixels. Drawing on one leaves the other as it is."""
