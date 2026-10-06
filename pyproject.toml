@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pixelrows"
+version = "0.1.0"
+description = "Pixel art as rows of text: draw sprites and animations, render them to PNG and GIF."
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["pixelrows*"]
