@@ -506,6 +506,58 @@ class BlitTest(unittest.TestCase):
                     self.base.blit(bad, 0, 0)
 
 
+class ScaledTest(unittest.TestCase):
+    def test_every_pixel_becomes_a_block(self):
+        image = drawn("rg", "b.").scaled(3)
+        self.assertEqual(rows(image), ["rrrggg"] * 3 + ["bbb..."] * 3)
+
+    def test_an_image_that_is_not_square(self):
+        image = drawn("rgb", "ykw").scaled(2)
+        self.assertEqual((image.width, image.height), (6, 4))
+        self.assertEqual(rows(image), ["rrggbb", "rrggbb", "yykkww", "yykkww"])
+
+    def test_the_bytes_match_the_new_size(self):
+        image = drawn("rgb", "ykw").scaled(5)
+        self.assertEqual((image.width, image.height), (15, 10))
+        self.assertEqual(len(image.data), 15 * 10 * 4)
+        self.assertIsInstance(image.data, bytearray)
+
+    def test_each_block_holds_its_pixel_exactly(self):
+        source = Image(4, 3)
+        for y in range(3):
+            for x in range(4):
+                put(source, x, y, (x * 60, y * 100, x + y, 255 - x * 40 - y))
+        big = source.scaled(4)
+        for y in range(12):
+            for x in range(16):
+                self.assertEqual(big.get(x, y), source.get(x // 4, y // 4))
+
+    def test_nothing_is_smoothed(self):
+        source = drawn("kw", "wk")
+        self.assertEqual(source.scaled(7).colours(), source.colours())
+
+    def test_factor_one_is_an_equal_image_of_its_own(self):
+        source = drawn("rg", "b.")
+        same = source.scaled(1)
+        self.assertEqual(same, source)
+        same.set(0, 0, WHITE)
+        self.assertEqual(rows(source), ["rg", "b."])
+
+    def test_leaves_the_image_as_it_is(self):
+        source = drawn("rg", "b.")
+        big = source.scaled(2)
+        big.fill(0, 0, 4, 4, WHITE)
+        self.assertEqual(rows(source), ["rg", "b."])
+        self.assertEqual((source.width, source.height), (2, 2))
+
+    def test_factor_must_be_a_whole_number_of_one_or_more(self):
+        source = drawn("rg", "b.")
+        for bad in (0, -1, -3, 1.5, 2.0, "2", None, True):
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError):
+                    source.scaled(bad)
+
+
 class CopyTest(unittest.TestCase):
     def test_a_copy_is_equal(self):
         image = drawn("rg", "b.")
@@ -531,6 +583,30 @@ class CopyTest(unittest.TestCase):
     def test_the_bytes_are_not_shared(self):
         image = Image(2, 2, RED)
         self.assertIsNot(image.copy().data, image.data)
+
+
+class ColoursTest(unittest.TestCase):
+    def test_distinct_values_in_order_of_first_appearance(self):
+        image = drawn("rr.", "gr.", "kkb")
+        self.assertEqual(image.colours(), [
+            (255, 0, 0, 255), CLEAR, (0, 255, 0, 255), (0, 0, 0, 255), (0, 0, 255, 255),
+        ])
+
+    def test_a_blank_image_has_the_one_transparent_value(self):
+        self.assertEqual(Image(5, 4).colours(), [CLEAR])
+
+    def test_a_background_is_one_colour(self):
+        self.assertEqual(Image(5, 4, "#102030").colours(), [(16, 32, 48, 255)])
+
+    def test_the_same_colour_at_another_alpha_is_another_value(self):
+        image = strip([(255, 0, 0, 255), (255, 0, 0, 128), (255, 0, 0, 255), (255, 0, 0, 0)])
+        self.assertEqual(image.colours(), [(255, 0, 0, 255), (255, 0, 0, 128), (255, 0, 0, 0)])
+
+    def test_values_are_tuples_of_four_whole_numbers(self):
+        for value in drawn("rg", "b.").colours():
+            self.assertIsInstance(value, tuple)
+            self.assertEqual(len(value), 4)
+            self.assertTrue(all(isinstance(channel, int) for channel in value))
 
 
 class EqualityTest(unittest.TestCase):

@@ -1,6 +1,8 @@
 """A grid of RGBA pixels to draw on."""
 from __future__ import annotations
 
+import struct
+
 from .errors import PixelRowsError
 from .palette import RGB, as_rgb
 
@@ -115,9 +117,25 @@ class Image:
                 dst = (row_y * self.width + col_x) * 4
                 data[dst:dst + 4] = bytes(_over(*source[src:src + 4], *data[dst:dst + 4]))
 
+    def scaled(self, factor: int) -> Image:
+        """A new image `factor` times the size: every pixel becomes a `factor` by `factor` block."""
+        _whole("scale factor", factor)
+        big = Image(self.width * factor, self.height * factor)
+        data = self.data
+        for y in range(big.height):
+            for x in range(big.width):
+                src = ((y // factor) * self.width + x // factor) * 4
+                dst = (y * big.width + x) * 4
+                big.data[dst:dst + 4] = data[src:src + 4]
+        return big
+
     def copy(self) -> Image:
         """A new image with the same pixels. Drawing on one leaves the other as it is."""
         return Image._of(self.width, self.height, bytearray(self.data))
+
+    def colours(self) -> list[RGBA]:
+        """Every distinct pixel value as (r, g, b, a), in order of first appearance, row by row."""
+        return list(dict.fromkeys(struct.iter_unpack("4B", self.data)))
 
     def __eq__(self, other: object) -> bool:
         return (
