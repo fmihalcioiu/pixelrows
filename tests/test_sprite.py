@@ -100,6 +100,7 @@ class SpriteNotChangedTest(unittest.TestCase):
 class SpriteReadingTest(unittest.TestCase):
     def setUp(self):
         self.sprite = Sprite("blob", BLOB)
+        self.empty = Sprite("none", ["...", "..."])
 
     def test_at_inside(self):
         self.assertEqual(self.sprite.at(0, 0), ".")
@@ -116,6 +117,49 @@ class SpriteReadingTest(unittest.TestCase):
         sprite = Sprite("a", ["ab", "cd"])
         self.assertEqual(sprite.at(-1, -1), ".")
         self.assertEqual(sprite.at(1, 1), "d")
+
+    def test_cells_are_the_painted_ones_row_by_row(self):
+        sprite = Sprite("a", [".ab", "c.."])
+        self.assertEqual(list(sprite.cells()), [(1, 0, "a"), (2, 0, "b"), (0, 1, "c")])
+
+    def test_cells_of_nothing_painted(self):
+        self.assertEqual(list(self.empty.cells()), [])
+
+    def test_cells_can_be_walked_again(self):
+        self.assertEqual(list(self.sprite.cells()), list(self.sprite.cells()))
+        self.assertEqual(len(list(self.sprite.cells())), 18)
+
+    def test_painted_counts_all_but_dots(self):
+        self.assertEqual(self.sprite.painted(), 18)
+        self.assertEqual(self.empty.painted(), 0)
+        self.assertEqual(Sprite("full", ["ab", "cd"]).painted(), 4)
+
+    def test_chars_used_counts_each_character(self):
+        self.assertEqual(self.sprite.chars_used(), {"o": 12, "g": 6})
+
+    def test_chars_used_is_in_order_of_first_appearance(self):
+        sprite = Sprite("a", ["..z.", "a.zb", "bbaa"])
+        self.assertEqual(list(sprite.chars_used().items()), [("z", 2), ("a", 3), ("b", 3)])
+
+    def test_chars_used_leaves_the_dot_out(self):
+        self.assertNotIn(".", self.sprite.chars_used())
+        self.assertEqual(self.empty.chars_used(), {})
+
+    def test_bbox_of_a_full_sprite_is_the_sprite(self):
+        self.assertEqual(self.sprite.bbox(), (0, 0, 6, 4))
+
+    def test_bbox_holds_only_what_is_painted(self):
+        sprite = Sprite("a", ["......", "..ab..", "...c..", "......", "......"])
+        self.assertEqual(sprite.bbox(), (2, 1, 2, 2))
+
+    def test_bbox_of_one_painted_cell(self):
+        self.assertEqual(Sprite("a", ["...", "...", "..x"]).bbox(), (2, 2, 1, 1))
+
+    def test_bbox_of_far_corners(self):
+        self.assertEqual(Sprite("a", ["x...", "....", "...x"]).bbox(), (0, 0, 4, 3))
+
+    def test_bbox_of_nothing_painted_is_none(self):
+        self.assertIsNone(self.empty.bbox())
 
 
 class SpriteEqualityTest(unittest.TestCase):

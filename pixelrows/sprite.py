@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 from .errors import PixelRowsError
 
@@ -50,6 +50,35 @@ class Sprite:
         if 0 <= y < len(self._rows) and 0 <= x < len(self._rows[0]):
             return self._rows[y][x]
         return TRANSPARENT
+
+    def cells(self) -> Iterator[tuple[int, int, str]]:
+        """Every painted cell as (x, y, character), row by row."""
+        for y, row in enumerate(self._rows):
+            for x, ch in enumerate(row):
+                if ch != TRANSPARENT:
+                    yield x, y, ch
+
+    def painted(self) -> int:
+        """How many cells are painted."""
+        return sum(len(row) - row.count(TRANSPARENT) for row in self._rows)
+
+    def chars_used(self) -> dict[str, int]:
+        """The painted characters and how many cells each has, in order of first appearance."""
+        counts: dict[str, int] = {}
+        for _, _, ch in self.cells():
+            counts[ch] = counts.get(ch, 0) + 1
+        return counts
+
+    def bbox(self) -> tuple[int, int, int, int] | None:
+        """(x, y, width, height) of the smallest box holding every painted cell, or None if nothing is painted."""
+        xs: list[int] = []
+        ys: list[int] = []
+        for x, y, _ in self.cells():
+            xs.append(x)
+            ys.append(y)
+        if not xs:
+            return None
+        return min(xs), min(ys), max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
 
     def __eq__(self, other: object) -> bool:
         return (
