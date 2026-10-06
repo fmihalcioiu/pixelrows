@@ -37,6 +37,11 @@ def to_hex(rgb: RGB) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
+def as_rgb(colour: str | RGB) -> RGB:
+    """A colour given either way, as (r, g, b)."""
+    return parse_hex(colour) if isinstance(colour, str) else parse_hex(to_hex(colour))
+
+
 class Palette:
     """
     Characters and the colours they stand for.
@@ -62,7 +67,7 @@ class Palette:
             raise PixelRowsError("a space cannot be a palette key")
         if colour is None:
             raise PixelRowsError(f"{ch!r} has no colour; only '.' is transparent")
-        self._hex[ch] = to_hex(parse_hex(colour) if isinstance(colour, str) else colour)
+        self._hex[ch] = to_hex(as_rgb(colour))
 
     def hex(self, ch: str) -> str | None:
         """The colour of `ch` as '#rrggbb', or None for '.'. KeyError if `ch` is not in the palette."""

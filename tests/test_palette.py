@@ -1,7 +1,7 @@
 import unittest
 
 from pixelrows.errors import PixelRowsError
-from pixelrows.palette import TRANSPARENT, Palette, parse_hex, to_hex
+from pixelrows.palette import TRANSPARENT, Palette, as_rgb, parse_hex, to_hex
 
 
 class ParseHexTest(unittest.TestCase):
@@ -34,6 +34,12 @@ class ToHexTest(unittest.TestCase):
 
     def test_round_trip(self):
         self.assertEqual(to_hex(parse_hex("#4773ab")), "#4773ab")
+
+
+class AsRgbTest(unittest.TestCase):
+    def test_takes_either_form(self):
+        self.assertEqual(as_rgb("#102030"), (16, 32, 48))
+        self.assertEqual(as_rgb((16, 32, 48)), (16, 32, 48))
 
 
 class PaletteTest(unittest.TestCase):
