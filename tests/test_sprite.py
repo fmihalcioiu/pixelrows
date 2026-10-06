@@ -1,6 +1,7 @@
 import unittest
 
 from pixelrows.errors import PixelRowsError
+from pixelrows.palette import Palette
 from pixelrows.sprite import Sprite
 
 BLOB = ["..oo..", ".oggo.", "oggggo", "oooooo"]
@@ -21,6 +22,23 @@ class SpriteMakingTest(unittest.TestCase):
     def test_one_pixel_is_a_sprite(self):
         sprite = Sprite("dot", ["o"])
         self.assertEqual((sprite.width, sprite.height), (1, 1))
+
+    def test_no_palette_is_none(self):
+        self.assertIsNone(Sprite("blob", BLOB).palette)
+
+    def test_mapping_becomes_a_palette(self):
+        sprite = Sprite("blob", BLOB, {"g": "#7CC86A"})
+        self.assertIsInstance(sprite.palette, Palette)
+        self.assertEqual(sprite.palette.to_dict(), {"g": "#7cc86a"})
+
+    def test_palette_is_taken_as_given(self):
+        sprite = Sprite("blob", BLOB, Palette({"g": "#7cc86a"}))
+        self.assertEqual(sprite.palette, Palette({"g": "#7cc86a"}))
+
+    def test_empty_palette_is_kept_as_none(self):
+        self.assertIsNone(Sprite("blob", BLOB, {}).palette)
+        self.assertIsNone(Sprite("blob", BLOB, Palette()).palette)
+        self.assertIsNone(Sprite("blob", BLOB, {".": None}).palette)
 
     def test_repr_gives_name_and_size(self):
         self.assertEqual(repr(Sprite("blob", BLOB)), "Sprite('blob', 6x4)")
@@ -75,13 +93,22 @@ class SpriteRulesTest(unittest.TestCase):
         self.assert_refused("sprite 'hat': rows are a list of strings, got None", "hat", None)
         self.assert_refused("sprite 'hat': rows are a list of strings, got 5", "hat", 5)
 
+    def test_palette_of_a_wrong_kind(self):
+        self.assert_refused("sprite 'hat': the palette is a Palette or a mapping, got ['o']", "hat", ["o"], ["o"])
+
+    def test_palette_errors_pass_through(self):
+        with self.assertRaises(PixelRowsError):
+            Sprite("hat", ["o"], {"o": "black"})
+        with self.assertRaises(PixelRowsError):
+            Sprite("hat", ["o"], {"oo": "#000000"})
+
 
 class SpriteNotChangedTest(unittest.TestCase):
     def setUp(self):
-        self.sprite = Sprite("blob", BLOB)
+        self.sprite = Sprite("blob", BLOB, {"g": "#7cc86a"})
 
-    def test_name_and_rows_cannot_be_set(self):
-        for field, value in (("name", "x"), ("rows", ("o",)), ("width", 3), ("height", 3)):
+    def test_name_rows_and_palette_cannot_be_set(self):
+        for field, value in (("name", "x"), ("rows", ("o",)), ("palette", None), ("width", 3), ("height", 3)):
             with self.subTest(field=field):
                 with self.assertRaises(AttributeError):
                     setattr(self.sprite, field, value)
@@ -95,6 +122,17 @@ class SpriteNotChangedTest(unittest.TestCase):
         sprite = Sprite("a", rows)
         rows[0] = "xx"
         self.assertEqual(sprite.rows, ("oo", "oo"))
+
+    def test_palette_it_was_made_from_can_change_without_it(self):
+        palette = Palette({"g": "#7cc86a"})
+        sprite = Sprite("a", ["g"], palette)
+        palette.set("g", "#000000")
+        palette.set("x", "#ffffff")
+        self.assertEqual(sprite.palette.to_dict(), {"g": "#7cc86a"})
+
+    def test_palette_handed_out_can_change_without_it(self):
+        self.sprite.palette.set("g", "#000000")
+        self.assertEqual(self.sprite.palette.to_dict(), {"g": "#7cc86a"})
 
 
 class SpriteReadingTest(unittest.TestCase):
@@ -162,9 +200,37 @@ class SpriteReadingTest(unittest.TestCase):
         self.assertIsNone(self.empty.bbox())
 
 
+class SpriteFlippedTest(unittest.TestCase):
+    def test_rows_are_turned_left_to_right(self):
+        sprite = Sprite("a", ["ab.", "c.."])
+        self.assertEqual(sprite.flipped().rows, (".ba", "..c"))
+
+    def test_name_and_palette_stay(self):
+        sprite = Sprite("a", ["ab.", "c.."], {"a": "#ff0000"})
+        flipped = sprite.flipped()
+        self.assertEqual(flipped.name, "a")
+        self.assertEqual(flipped.palette, Palette({"a": "#ff0000"}))
+        self.assertIsNone(Sprite("a", ["ab"]).flipped().palette)
+
+    def test_original_is_left_as_it_was(self):
+        sprite = Sprite("a", ["ab.", "c.."])
+        flipped = sprite.flipped()
+        self.assertIsNot(flipped, sprite)
+        self.assertEqual(sprite.rows, ("ab.", "c.."))
+
+    def test_flipped_twice_is_the_same_sprite(self):
+        sprite = Sprite("a", ["ab.", "c.."], {"a": "#ff0000"})
+        self.assertEqual(sprite.flipped().flipped(), sprite)
+
+    def test_sprite_that_mirrors_itself_is_equal_when_flipped(self):
+        sprite = Sprite("blob", BLOB)
+        self.assertEqual(sprite.flipped(), sprite)
+
+
 class SpriteEqualityTest(unittest.TestCase):
-    def test_same_name_and_rows_are_equal(self):
-        self.assertEqual(Sprite("a", ["ab"]), Sprite("a", ("ab",)))
+    def test_same_name_rows_and_palette_are_equal(self):
+        self.assertEqual(Sprite("a", ["ab"], {"a": "#f00"}), Sprite("a", ("ab",), Palette({"a": "#ff0000"})))
+        self.assertEqual(Sprite("a", ["ab"]), Sprite("a", ["ab"], {}))
 
     def test_another_name_is_not_equal(self):
         self.assertNotEqual(Sprite("a", ["ab"]), Sprite("b", ["ab"]))
@@ -172,6 +238,11 @@ class SpriteEqualityTest(unittest.TestCase):
     def test_other_rows_are_not_equal(self):
         self.assertNotEqual(Sprite("a", ["ab"]), Sprite("a", ["ba"]))
         self.assertNotEqual(Sprite("a", ["ab"]), Sprite("a", ["ab", "ab"]))
+
+    def test_another_palette_is_not_equal(self):
+        self.assertNotEqual(Sprite("a", ["ab"], {"a": "#ff0000"}), Sprite("a", ["ab"], {"a": "#00ff00"}))
+        self.assertNotEqual(Sprite("a", ["ab"], {"a": "#ff0000"}), Sprite("a", ["ab"]))
+        self.assertNotEqual(Sprite("a", ["ab"]), Sprite("a", ["ab"], {"a": "#ff0000"}))
 
     def test_not_equal_to_what_is_not_a_sprite(self):
         self.assertNotEqual(Sprite("a", ["ab"]), ("ab",))

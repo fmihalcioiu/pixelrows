@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 
 from .errors import PixelRowsError
-
-TRANSPARENT = "."
+from .palette import RGB, TRANSPARENT, Palette
 
 
 class Sprite:
@@ -14,16 +13,23 @@ class Sprite:
     A named picture written as rows of characters, one character for each pixel.
 
     '.' is an empty pixel and every other character is a painted one. A sprite
-    is not changed after it is made.
+    may carry palette entries of its own, which are laid over the palette of
+    the set it is in. A sprite is not changed after it is made.
     """
 
-    __slots__ = ("_name", "_rows")
+    __slots__ = ("_name", "_rows", "_palette")
 
-    def __init__(self, name: str, rows: Iterable[str]):
+    def __init__(
+        self,
+        name: str,
+        rows: Iterable[str],
+        palette: Palette | Mapping[str, str | RGB | None] | None = None,
+    ):
         if not isinstance(name, str) or not name:
             raise PixelRowsError(f"a sprite's name is a non-empty string, got {name!r}")
         self._name = name
         self._rows = _checked_rows(name, rows)
+        self._palette = _own_palette(name, palette)
 
     @property
     def name(self) -> str:
@@ -34,6 +40,11 @@ class Sprite:
     def rows(self) -> tuple[str, ...]:
         """The rows, top to bottom."""
         return self._rows
+
+    @property
+    def palette(self) -> Palette | None:
+        """A copy of the sprite's own palette entries, or None when it has none."""
+        return None if self._palette is None else Palette(self._palette.to_dict())
 
     @property
     def width(self) -> int:
@@ -80,11 +91,16 @@ class Sprite:
             return None
         return min(xs), min(ys), max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
 
+    def flipped(self) -> Sprite:
+        """A new sprite: this one turned left to right, with the same name and palette."""
+        return Sprite(self._name, [row[::-1] for row in self._rows], self._palette)
+
     def __eq__(self, other: object) -> bool:
         return (
             isinstance(other, Sprite)
             and self._name == other._name
             and self._rows == other._rows
+            and self._palette == other._palette
         )
 
     def __repr__(self) -> str:
@@ -115,3 +131,16 @@ def _checked_rows(name: str, rows: Iterable[str]) -> tuple[str, ...]:
         if len(row) != usual:
             raise PixelRowsError(f"{where}: row {y} is {len(row)} wide, the others are {usual}")
     return rows
+
+
+def _own_palette(name: str, palette: Palette | Mapping[str, str | RGB | None] | None) -> Palette | None:
+    """A sprite's own palette as a fresh Palette, or None when it has no entries."""
+    if palette is None:
+        return None
+    if isinstance(palette, Palette):
+        own = Palette(palette.to_dict())
+    elif isinstance(palette, Mapping):
+        own = Palette(palette)
+    else:
+        raise PixelRowsError(f"sprite {name!r}: the palette is a Palette or a mapping, got {palette!r}")
+    return own if len(own) else None
