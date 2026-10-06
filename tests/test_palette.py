@@ -88,6 +88,15 @@ class PaletteTest(unittest.TestCase):
         with self.assertRaises(PixelRowsError):
             Palette({"o": None})
 
+    def test_merged_lays_the_other_over(self):
+        merged = self.palette.merged({"s": "#ffffff", "x": "#ff0000"})
+        self.assertEqual(merged.to_dict(), {"o": "#1a1a22", "s": "#ffffff", "x": "#ff0000"})
+        self.assertEqual(self.palette.hex("s"), "#e8b087")
+
+    def test_merged_takes_a_palette_or_nothing(self):
+        self.assertEqual(self.palette.merged(Palette({"x": "#ff0000"})).chars(), ["o", "s", "x"])
+        self.assertEqual(self.palette.merged(None), self.palette)
+
     def test_to_dict_keeps_order_and_round_trips(self):
         self.assertEqual(list(self.palette.to_dict()), ["o", "s"])
         self.assertEqual(Palette(self.palette.to_dict()), self.palette)

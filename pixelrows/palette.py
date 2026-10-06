@@ -96,6 +96,15 @@ class Palette:
     def __len__(self) -> int:
         return len(self._hex)
 
+    def merged(self, other: Palette | Mapping[str, str | RGB | None] | None) -> Palette:
+        """A new palette: this one with `other` laid over it. Where both have a character, `other` wins."""
+        result = Palette(self._hex)
+        if other is not None:
+            entries = other.to_dict() if isinstance(other, Palette) else other
+            for ch, colour in entries.items():
+                result.set(ch, colour)
+        return result
+
     def to_dict(self) -> dict[str, str]:
         """Character to '#rrggbb', in order. What a set file stores."""
         return dict(self._hex)
