@@ -122,6 +122,33 @@ class Canvas:
             error += 2 * dy
         return self
 
+    def stamp(self, x: int, y: int, rows: Iterable[str] | Sprite | Canvas, flip: bool = False) -> Canvas:
+        """
+        Lays rows of characters down with their top-left corner at (x, y).
+
+        A '.' in them keeps what is underneath. `rows` is a list of strings, a sprite or
+        another canvas. A list of strings keeps the rules of a sprite's rows. `flip` lays
+        the rows down turned left to right.
+        """
+        if isinstance(rows, Canvas):
+            rows = rows.rows()
+        elif isinstance(rows, Sprite):
+            rows = rows.rows
+        else:
+            rows = _sprite_rows("stamp", rows)
+        for dy, row in enumerate(rows):
+            for dx, ch in enumerate(reversed(row) if flip else row):
+                if ch != TRANSPARENT:
+                    self._put(x + dx, y + dy, ch)
+        return self
+
+    def mirror(self) -> Canvas:
+        """Copies the left half over the right half, mirrored. With an odd width the middle column stays."""
+        for row in self._grid:
+            for x in range(self.width // 2):
+                row[-1 - x] = row[x]
+        return self
+
     def rows(self) -> list[str]:
         """The rows as strings, top to bottom."""
         return ["".join(row) for row in self._grid]

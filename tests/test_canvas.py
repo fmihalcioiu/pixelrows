@@ -348,6 +348,170 @@ class CanvasLineTest(unittest.TestCase):
         self.assertIs(canvas.line(9, 9, 12, 9, "o"), canvas)
 
 
+class CanvasStampTest(unittest.TestCase):
+    def assert_refused(self, message, rows):
+        canvas = Canvas.from_rows(LETTERS)
+        with self.assertRaises(PixelRowsError) as caught:
+            canvas.stamp(0, 0, rows)
+        self.assertEqual(str(caught.exception), message)
+        self.assertEqual(canvas.rows(), LETTERS)
+
+    def test_rows_are_laid_down_from_their_top_left_corner(self):
+        self.assertEqual(Canvas(5, 4).stamp(1, 1, ["ab", "cd"]).rows(), [".....", ".ab..", ".cd..", "....."])
+        self.assertEqual(Canvas(3, 3).stamp(0, 0, ["ab", "cd"]).rows(), ["ab.", "cd.", "..."])
+
+    def test_dot_keeps_what_is_underneath(self):
+        self.assertEqual(Canvas.from_rows(LETTERS).stamp(0, 0, ["x.", ".y"]).rows(), ["xbc", "dyf", "ghi"])
+
+    def test_rows_of_dots_change_nothing(self):
+        self.assertEqual(Canvas.from_rows(LETTERS).stamp(0, 0, ["...", "...", "..."]).rows(), LETTERS)
+
+    def test_rows_can_come_in_a_tuple_or_one_at_a_time(self):
+        self.assertEqual(Canvas(2, 2).stamp(0, 0, ("ab", "cd")).rows(), ["ab", "cd"])
+        self.assertEqual(Canvas(2, 2).stamp(0, 0, (row for row in ["ab", "cd"])).rows(), ["ab", "cd"])
+
+    def test_sprite_can_be_stamped(self):
+        sprite = Sprite("s", ["ab.", ".cd"])
+        self.assertEqual(Canvas(4, 3).stamp(1, 1, sprite).rows(), ["....", ".ab.", "..cd"])
+
+    def test_canvas_can_be_stamped(self):
+        other = Canvas(2, 2).px(0, 0, "a").px(1, 1, "b")
+        self.assertEqual(Canvas(4, 3).stamp(1, 0, other).rows(), [".a..", "..b.", "...."])
+
+    def test_dot_of_a_sprite_or_a_canvas_keeps_what_is_underneath(self):
+        for stamped in (Sprite("s", ["x.", ".y"]), Canvas.from_rows(["x.", ".y"])):
+            with self.subTest(stamped=type(stamped).__name__):
+                self.assertEqual(Canvas.from_rows(LETTERS).stamp(1, 1, stamped).rows(), ["abc", "dxf", "ghy"])
+
+    def test_canvas_stamped_on_itself_is_read_as_it_was(self):
+        canvas = Canvas.from_rows(["ab.."])
+        canvas.stamp(1, 0, canvas)
+        self.assertEqual(canvas.rows(), ["aab."])
+
+    def test_flip_lays_the_rows_down_turned_left_to_right(self):
+        rows = ["ab.", "c.."]
+        self.assertEqual(Canvas(5, 4).stamp(1, 1, rows).rows(), [".....", ".ab..", ".c...", "....."])
+        self.assertEqual(Canvas(5, 4).stamp(1, 1, rows, flip=True).rows(), [".....", "..ba.", "...c.", "....."])
+
+    def test_flip_can_be_given_by_place(self):
+        self.assertEqual(Canvas(3, 1).stamp(0, 0, ["ab."], True).rows(), [".ba"])
+        self.assertEqual(Canvas(3, 1).stamp(0, 0, ["ab."], False).rows(), ["ab."])
+
+    def test_flip_turns_a_sprite_and_a_canvas(self):
+        rows = ["ab.", "c.."]
+        self.assertEqual(Canvas(3, 2).stamp(0, 0, Sprite("s", rows), flip=True).rows(), [".ba", "..c"])
+        self.assertEqual(Canvas(3, 2).stamp(0, 0, Canvas.from_rows(rows), flip=True).rows(), [".ba", "..c"])
+
+    def test_flip_keeps_what_is_under_a_dot(self):
+        canvas = Canvas.from_rows(LETTERS).stamp(0, 0, ["x..", "..."], flip=True)
+        self.assertEqual(canvas.rows(), ["abx", "def", "ghi"])
+
+    def test_part_outside_is_dropped(self):
+        rows = ["ab", "cd"]
+        self.assertEqual(Canvas(3, 3).stamp(-1, -1, rows).rows(), ["d..", "...", "..."])
+        self.assertEqual(Canvas(3, 3).stamp(2, -1, rows).rows(), ["..c", "...", "..."])
+        self.assertEqual(Canvas(3, 3).stamp(-1, 2, rows).rows(), ["...", "...", "b.."])
+        self.assertEqual(Canvas(3, 3).stamp(2, 2, rows).rows(), ["...", "...", "..a"])
+
+    def test_flipped_rows_are_turned_before_the_edge_cuts_them(self):
+        self.assertEqual(Canvas(3, 1).stamp(-1, 0, ["ab"], flip=True).rows(), ["a.."])
+        self.assertEqual(Canvas(3, 1).stamp(2, 0, ["ab"], flip=True).rows(), ["..b"])
+
+    def test_rows_larger_than_the_canvas_are_cut_to_it(self):
+        rows = ["abcd", "efgh", "ijkl", "mnop"]
+        self.assertEqual(Canvas(2, 2).stamp(-1, -1, rows).rows(), ["fg", "jk"])
+
+    def test_rows_all_outside_draw_nothing(self):
+        for x, y in ((3, 0), (0, 3), (-2, 0), (0, -2), (50, 50), (-50, -50)):
+            with self.subTest(x=x, y=y):
+                self.assertEqual(Canvas.from_rows(LETTERS).stamp(x, y, ["xx", "xx"]).rows(), LETTERS)
+
+    def test_what_is_stamped_is_left_as_it_was(self):
+        rows = ["ab", "cd"]
+        other = Canvas.from_rows(rows)
+        Canvas(3, 3).stamp(1, 1, rows).stamp(0, 0, other, flip=True)
+        self.assertEqual(rows, ["ab", "cd"])
+        self.assertEqual(other.rows(), ["ab", "cd"])
+
+    def test_stamped_canvas_can_change_without_the_one_it_went_on(self):
+        other = Canvas(1, 1).px(0, 0, "a")
+        canvas = Canvas(2, 1).stamp(0, 0, other)
+        other.px(0, 0, "z")
+        self.assertEqual(canvas.rows(), ["a."])
+
+    def test_list_of_strings_needs_at_least_one_row(self):
+        self.assert_refused("stamp: there are no rows", [])
+
+    def test_uneven_row_is_named_with_both_widths(self):
+        self.assert_refused("stamp: row 1 is 3 wide, the others are 2", ["oo", "ooo"])
+        self.assert_refused("stamp: row 2 is 1 wide, the others are 2", ["oo", "oo", "o"])
+
+    def test_empty_row_is_named(self):
+        self.assert_refused("stamp: row 1 is empty", ["oo", "", "oo"])
+
+    def test_whitespace_is_named_by_row_and_column(self):
+        self.assert_refused("stamp: row 0 has whitespace at column 1", ["o o"])
+        self.assert_refused("stamp: row 1 has whitespace at column 0", ["oo", "\to"])
+
+    def test_row_that_is_not_a_string_is_named(self):
+        self.assert_refused("stamp: row 1 is not a string, got 12", ["oo", 12])
+
+    def test_rows_must_be_a_list_not_one_string(self):
+        self.assert_refused("stamp: rows are a list of strings, got one string 'ooo'", "ooo")
+
+    def test_rows_that_cannot_be_read_as_a_list(self):
+        self.assert_refused("stamp: rows are a list of strings, got None", None)
+        self.assert_refused("stamp: rows are a list of strings, got 5", 5)
+
+    def test_rows_are_checked_when_they_would_fall_outside(self):
+        with self.assertRaises(PixelRowsError):
+            Canvas(3, 3).stamp(9, 9, ["oo", "o"])
+
+    def test_returns_the_canvas(self):
+        canvas = Canvas(3, 3)
+        self.assertIs(canvas.stamp(0, 0, ["ab"]), canvas)
+        self.assertIs(canvas.stamp(0, 0, Sprite("s", ["ab"]), flip=True), canvas)
+        self.assertIs(canvas.stamp(9, 9, ["ab"]), canvas)
+
+
+class CanvasMirrorTest(unittest.TestCase):
+    def test_even_width_copies_the_left_half_over_the_right(self):
+        self.assertEqual(Canvas.from_rows(["ab..", "c..."]).mirror().rows(), ["abba", "c..c"])
+        self.assertEqual(Canvas.from_rows(["abcdef"]).mirror().rows(), ["abccba"])
+
+    def test_odd_width_keeps_the_middle_column(self):
+        self.assertEqual(Canvas.from_rows(["abc..", "d.e.."]).mirror().rows(), ["abcba", "d.e.d"])
+        self.assertEqual(Canvas.from_rows(["ab.", "c.d", "..."]).mirror().rows(), ["aba", "c.c", "..."])
+
+    def test_right_half_is_lost(self):
+        self.assertEqual(Canvas.from_rows(["a.xy", "..zz"]).mirror().rows(), ["a..a", "...."])
+        self.assertEqual(Canvas.from_rows(["a.mxy", "...zz"]).mirror().rows(), ["a.m.a", "....."])
+
+    def test_width_of_1_stays_as_it_is(self):
+        self.assertEqual(Canvas.from_rows(["a", "b", "."]).mirror().rows(), ["a", "b", "."])
+
+    def test_width_of_2_copies_the_left_column(self):
+        self.assertEqual(Canvas.from_rows(["ab", ".c"]).mirror().rows(), ["aa", ".."])
+
+    def test_every_row_reads_the_same_from_both_ends(self):
+        for rows in (["abcdef", "..x..y", "q....."], ["abcdefg", "..x.y.z", "q......"]):
+            with self.subTest(width=len(rows[0])):
+                for row in Canvas.from_rows(rows).mirror().rows():
+                    self.assertEqual(row, row[::-1])
+
+    def test_mirror_again_changes_nothing(self):
+        canvas = Canvas.from_rows(["abc..", "d.e.."]).mirror()
+        self.assertEqual(canvas.mirror().rows(), ["abcba", "d.e.d"])
+
+    def test_size_stays(self):
+        canvas = Canvas.from_rows(["abc..", "d.e.."]).mirror()
+        self.assertEqual((canvas.width, canvas.height), (5, 2))
+
+    def test_returns_the_canvas(self):
+        canvas = Canvas(4, 2)
+        self.assertIs(canvas.mirror(), canvas)
+
+
 class CanvasRowsTest(unittest.TestCase):
     def test_rows_are_a_list_of_strings(self):
         rows = Canvas(3, 2).px(1, 0, "o").rows()
