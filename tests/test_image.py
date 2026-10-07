@@ -367,11 +367,31 @@ class FillTest(unittest.TestCase):
         self.assertEqual(image.get(1, 0), (255, 255, 255, 128))
         self.assertEqual(image.get(2, 0), (255, 255, 255, 255))
 
+    def test_alpha_between_does_what_set_does_pixel_by_pixel(self):
+        # Rows 0, 1 and 3 read the same and row 2 does not.
+        lines = ("rg.kw", "rg.kw", "wk.gr", "rg.kw")
+        for x, y, w, h in ((0, 0, 5, 4), (1, 1, 3, 2), (-2, -1, 4, 3), (3, 2, 9, 9)):
+            with self.subTest(x=x, y=y, w=w, h=h):
+                filled = drawn(*lines)
+                filled.fill(x, y, w, h, (30, 200, 90), 77)
+                by_set = drawn(*lines)
+                for py in range(y, y + h):
+                    for px in range(x, x + w):
+                        by_set.set(px, py, (30, 200, 90), 77)
+                self.assertEqual(filled.data, by_set.data)
+
     def test_alpha_between_leaves_the_rest_alone(self):
         image = drawn("kkk", "kkk", "kkk")
         image.fill(1, 1, 1, 1, WHITE, 128)
         self.assertEqual(rows(image), ["kkk", "k?k", "kkk"])
         self.assertEqual(image.get(1, 1), (128, 128, 128, 255))
+
+    def test_a_large_fill_reaches_every_pixel(self):
+        image = Image(300, 200)
+        image.fill(0, 0, 300, 200, (1, 2, 3))
+        self.assertEqual(image.data, bytearray([1, 2, 3, 255] * 60000))
+        image.fill(0, 0, 300, 200, WHITE, 128)
+        self.assertEqual(image.colours(), [source_over((255, 255, 255, 128), (1, 2, 3, 255))])
 
     def test_bad_colour_and_bad_alpha(self):
         image = Image(2, 2)
@@ -421,6 +441,15 @@ class BlitTest(unittest.TestCase):
         base.blit(strip([(255, 255, 255, 128), (255, 255, 255, 128)]), 0, 0)
         self.assertEqual(base.get(0, 0), (128, 128, 128, 255))
         self.assertEqual(base.get(1, 0), (255, 255, 255, 128))
+
+    def test_a_row_of_mixed_alpha(self):
+        base = drawn("kkkkkk")
+        base.blit(strip([
+            (255, 0, 0, 255), (255, 0, 0, 255), CLEAR,
+            (255, 255, 255, 128), (0, 255, 0, 255), CLEAR,
+        ]), 0, 0)
+        self.assertEqual(rows(base), ["rrk?gk"])
+        self.assertEqual(base.get(3, 0), (128, 128, 128, 255))
 
     def test_clips_at_the_left(self):
         self.base.blit(self.stamp, -1, 0)

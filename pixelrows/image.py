@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import struct
 
 from . import png
@@ -9,6 +10,9 @@ from .errors import PixelRowsError
 from .palette import RGB, as_rgb
 
 RGBA = tuple[int, int, int, int]
+
+# In a row's alpha bytes: a run of opaque pixels, or one pixel that is partly transparent.
+_PAINTED = re.compile(rb"\xff+|[\x01-\xfe]")
 
 
 def _whole(what: str, value: int) -> int:
@@ -97,10 +101,32 @@ class Image:
         if alpha == 0 or left >= right or top >= bottom:
             return
         data = self.data
-        for row_y in range(top, bottom):
-            for col_x in range(left, right):
-                at = (row_y * self.width + col_x) * 4
-                data[at:at + 4] = bytes(_over(r, g, b, alpha, *data[at:at + 4]))
+        stride = self.width * 4
+        span = (right - left) * 4
+        first = top * stride + left * 4
+        starts = range(first, first + (bottom - top) * stride, stride)
+        if alpha == 255:
+            row = bytes((r, g, b, 255)) * (right - left)
+            for start in starts:
+                data[start:start + span] = row
+            return
+        # A pixel value that came up before is not worked out again, and neither
+        # is a row that reads the same as the one above it.
+        known: dict[bytes, bytes] = {}
+        before = laid = b""
+        for start in starts:
+            row = bytes(data[start:start + span])
+            if row != before:
+                before = row
+                parts = []
+                for at in range(0, span, 4):
+                    pixel = row[at:at + 4]
+                    mixed = known.get(pixel)
+                    if mixed is None:
+                        mixed = known[pixel] = bytes(_over(r, g, b, alpha, *pixel))
+                    parts.append(mixed)
+                laid = b"".join(parts)
+            data[start:start + span] = laid
 
     def blit(self, other: Image, x: int, y: int) -> None:
         """Lays `other` over this image with its top-left corner at (x, y), clipped to this image."""
@@ -113,23 +139,33 @@ class Image:
         # An image laid over itself is read as it was before the call.
         source = bytes(other.data) if other is self else other.data
         data = self.data
+        span = (right - left) * 4
         for row_y in range(top, bottom):
-            for col_x in range(left, right):
-                src = ((row_y - y) * other.width + (col_x - x)) * 4
-                dst = (row_y * self.width + col_x) * 4
-                data[dst:dst + 4] = bytes(_over(*source[src:src + 4], *data[dst:dst + 4]))
+            src = ((row_y - y) * other.width + (left - x)) * 4
+            dst = (row_y * self.width + left) * 4
+            row = bytes(source[src:src + span])
+            # Opaque runs are copied whole, partly transparent pixels are laid
+            # over one at a time, and fully transparent ones are passed by.
+            for run in _PAINTED.finditer(row[3::4]):
+                lo, hi = run.start() * 4, run.end() * 4
+                if row[lo + 3] == 255:
+                    data[dst + lo:dst + hi] = row[lo:hi]
+                else:
+                    data[dst + lo:dst + hi] = bytes(_over(*row[lo:hi], *data[dst + lo:dst + hi]))
 
     def scaled(self, factor: int) -> Image:
         """A new image `factor` times the size: every pixel becomes a `factor` by `factor` block."""
         _whole("scale factor", factor)
-        big = Image(self.width * factor, self.height * factor)
-        data = self.data
-        for y in range(big.height):
-            for x in range(big.width):
-                src = ((y // factor) * self.width + x // factor) * 4
-                dst = (y * big.width + x) * 4
-                big.data[dst:dst + 4] = data[src:src + 4]
-        return big
+        if factor == 1:
+            return self.copy()
+        data = bytes(self.data)
+        stride = self.width * 4
+        out = bytearray()
+        for start in range(0, len(data), stride):
+            row = data[start:start + stride]
+            wide = b"".join(row[at:at + 4] * factor for at in range(0, stride, 4))
+            out += wide * factor
+        return Image._of(self.width * factor, self.height * factor, out)
 
     def copy(self) -> Image:
         """A new image with the same pixels. Drawing on one leaves the other as it is."""
