@@ -56,7 +56,7 @@ class SpriteSet:
     One palette, the sprites read against it and the anims that play them.
 
     It is what a set file holds. A set may be half drawn: an anim may name a
-    sprite that is not there yet.
+    sprite that is not there yet, and `problems` says so.
     """
 
     def __init__(self, palette: Palette | Mapping[str, str | RGB | None] | None = None):
@@ -112,6 +112,18 @@ class SpriteSet:
         if wrong:
             raise PixelRowsError(wrong[0])
         return [self.sprites[frame] for frame in anim.frames]
+
+    def problems(self) -> list[str]:
+        """Everything that stops the set from being drawn or played, one line each. Empty when there is nothing."""
+        found: list[str] = []
+        for sprite in self.sprites.values():
+            palette = self.palette_for(sprite)
+            for ch in sprite.chars_used():
+                if ch not in palette:
+                    found.append(f"sprite {sprite.name!r} uses {ch!r}, which is not in the palette")
+        for anim in self.anims.values():
+            found.extend(self._anim_problems(anim))
+        return found
 
     def _anim_problems(self, anim: Anim) -> list[str]:
         """One anim's lines: its frames that name no sprite, then its frames that differ in size from the first."""

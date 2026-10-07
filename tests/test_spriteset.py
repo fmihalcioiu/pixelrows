@@ -344,6 +344,117 @@ class FramesOfTest(unittest.TestCase):
         self.assertEqual(self.spriteset.frames_of("still"), [self.a_2])
 
 
+class ProblemsTest(unittest.TestCase):
+    def test_nothing_wrong_is_an_empty_list(self):
+        self.assertEqual(blob_set().problems(), [])
+        self.assertEqual(SpriteSet().problems(), [])
+
+    def test_character_the_palette_lacks(self):
+        spriteset = SpriteSet({"o": "#000000"})
+        spriteset.add(Sprite("x", ["oq", "qo"]))
+        self.assertEqual(spriteset.problems(), ["sprite 'x' uses 'q', which is not in the palette"])
+
+    def test_one_line_a_character_in_order_of_first_appearance(self):
+        spriteset = SpriteSet({"o": "#000000"})
+        spriteset.add(Sprite("x", ["oz.", "qzq", "aoo"]))
+        self.assertEqual(
+            spriteset.problems(),
+            [
+                "sprite 'x' uses 'z', which is not in the palette",
+                "sprite 'x' uses 'q', which is not in the palette",
+                "sprite 'x' uses 'a', which is not in the palette",
+            ],
+        )
+
+    def test_dot_is_never_a_problem(self):
+        spriteset = SpriteSet()
+        spriteset.add(Sprite("none", ["..", ".."]))
+        self.assertEqual(spriteset.problems(), [])
+
+    def test_sprites_own_palette_counts(self):
+        spriteset = SpriteSet({"o": "#000000"})
+        spriteset.add(Sprite("x", ["oq"], {"q": "#ff0000"}))
+        self.assertEqual(spriteset.problems(), [])
+
+    def test_one_sprites_own_palette_does_not_cover_another(self):
+        spriteset = SpriteSet({"o": "#000000"})
+        spriteset.add(Sprite("x", ["oq"], {"q": "#ff0000"}))
+        spriteset.add(Sprite("y", ["oq"]))
+        self.assertEqual(spriteset.problems(), ["sprite 'y' uses 'q', which is not in the palette"])
+
+    def test_frame_naming_a_missing_sprite(self):
+        spriteset = SpriteSet({"o": "#000000"})
+        spriteset.add(block("a_0", 2, 2))
+        spriteset.add_anim("walk", ["a_0", "a_9"], 10)
+        self.assertEqual(spriteset.problems(), ["anim 'walk' names 'a_9', which is not a sprite"])
+
+    def test_frame_of_another_size_reads_as_in_frames_of(self):
+        spriteset = SpriteSet({"o": "#000000"})
+        spriteset.add(block("a_0", 12, 16))
+        spriteset.add(block("a_2", 12, 17))
+        spriteset.add_anim("walk", ["a_0", "a_2"], 10)
+        self.assertEqual(spriteset.problems(), ["anim 'walk': frame 'a_2' is 12x17, the first frame is 12x16"])
+        with self.assertRaises(PixelRowsError) as caught:
+            spriteset.frames_of("walk")
+        self.assertEqual([str(caught.exception)], spriteset.problems())
+
+    def test_size_is_held_against_the_first_frame_that_exists(self):
+        spriteset = SpriteSet({"o": "#000000"})
+        spriteset.add(block("small", 2, 2))
+        spriteset.add(block("tall", 2, 3))
+        spriteset.add_anim("walk", ["gone", "small", "tall", "small"], 10)
+        self.assertEqual(
+            spriteset.problems(),
+            [
+                "anim 'walk' names 'gone', which is not a sprite",
+                "anim 'walk': frame 'tall' is 2x3, the first frame is 2x2",
+            ],
+        )
+
+    def test_anim_with_no_sprite_at_all_has_no_size_line(self):
+        spriteset = SpriteSet()
+        spriteset.add_anim("walk", ["a_0", "a_1"], 10)
+        self.assertEqual(
+            spriteset.problems(),
+            [
+                "anim 'walk' names 'a_0', which is not a sprite",
+                "anim 'walk' names 'a_1', which is not a sprite",
+            ],
+        )
+
+    def test_order_is_sprites_then_each_anims_missing_then_its_sizes(self):
+        spriteset = SpriteSet({"o": "#000000"})
+        spriteset.add(Sprite("x", ["qo", "or"]))
+        spriteset.add(Sprite("y", ["oq", "qo"], {"q": "#ff0000"}))
+        spriteset.add(Sprite("tall", ["oo", "oo", "oo"]))
+        spriteset.add(Sprite("z", ["oo", "oq"]))
+        spriteset.add(Sprite("wide", ["ooo", "ooo"]))
+        spriteset.add_anim("walk", ["a_9", "x", "tall", "a_8", "y", "wide"], 10)
+        spriteset.add_anim("run", ["tall", "gone", "z"], 12)
+        spriteset.add_anim("idle", ["x", "y"], 2)
+        self.assertEqual(
+            spriteset.problems(),
+            [
+                "sprite 'x' uses 'q', which is not in the palette",
+                "sprite 'x' uses 'r', which is not in the palette",
+                "sprite 'z' uses 'q', which is not in the palette",
+                "anim 'walk' names 'a_9', which is not a sprite",
+                "anim 'walk' names 'a_8', which is not a sprite",
+                "anim 'walk': frame 'tall' is 2x3, the first frame is 2x2",
+                "anim 'walk': frame 'wide' is 3x2, the first frame is 2x2",
+                "anim 'run' names 'gone', which is not a sprite",
+                "anim 'run': frame 'z' is 2x2, the first frame is 2x3",
+            ],
+        )
+
+    def test_problems_does_not_raise_where_frames_of_does(self):
+        spriteset = SpriteSet()
+        spriteset.add_anim("walk", ["a_0"], 10)
+        with self.assertRaises(PixelRowsError):
+            spriteset.frames_of("walk")
+        self.assertEqual(len(spriteset.problems()), 1)
+
+
 class ToDictTest(unittest.TestCase):
     def test_shape_is_the_set_file(self):
         self.assertEqual(blob_set().to_dict(), FILE)
@@ -536,6 +647,19 @@ class FromDictTest(unittest.TestCase):
         self.assert_refused(
             "not a colour: 'green' (expected '#rrggbb')",
             {"sprites": {"a": {"rows": ["g"], "palette": {"g": "green"}}}},
+        )
+
+    def test_half_drawn_file_is_read_and_its_problems_listed(self):
+        spriteset = SpriteSet.from_dict(
+            {"sprites": {"a_0": ["oq"]}, "anims": {"walk": {"frames": ["a_0", "a_1"], "fps": 8}}}
+        )
+        self.assertEqual(
+            spriteset.problems(),
+            [
+                "sprite 'a_0' uses 'o', which is not in the palette",
+                "sprite 'a_0' uses 'q', which is not in the palette",
+                "anim 'walk' names 'a_1', which is not a sprite",
+            ],
         )
 
     def test_data_it_was_read_from_can_change_without_it(self):
@@ -782,6 +906,24 @@ class SaveThenLoadTest(unittest.TestCase):
 
     def test_an_empty_set_comes_back_equal(self):
         self.assertEqual(self.round_trip(SpriteSet()), SpriteSet())
+
+    def test_order_own_palettes_and_fps_come_back(self):
+        spriteset = SpriteSet({"z": "#010203", "a": "#040506", "m": (7, 8, 9)})
+        spriteset.add(Sprite("zed", ["za", "mz"], {"q": "#ffffff", "a": "#000000"}))
+        spriteset.add(Sprite("ay", ["..", ".."]))
+        spriteset.add(Sprite("em", ["m"]))
+        spriteset.add_anim("spin", ["zed", "ay", "zed"], 7.5)
+        spriteset.add_anim("blink", ["em"], 12.0)
+        spriteset.add_anim("gone", ["not_drawn"], 1)
+        loaded = self.round_trip(spriteset)
+        self.assertEqual(loaded, spriteset)
+        self.assertEqual(loaded.palette.chars(), ["z", "a", "m"])
+        self.assertEqual(list(loaded.sprites), ["zed", "ay", "em"])
+        self.assertEqual(list(loaded.anims), ["spin", "blink", "gone"])
+        self.assertEqual(loaded.sprite("zed").palette.to_dict(), {"q": "#ffffff", "a": "#000000"})
+        self.assertEqual(loaded.anim("spin").fps, 7.5)
+        self.assertEqual(loaded.anim("blink").fps, 12)
+        self.assertEqual(loaded.problems(), spriteset.problems())
 
     def test_saved_twice_the_file_is_the_same(self):
         with tempfile.TemporaryDirectory() as folder:
