@@ -364,6 +364,21 @@ class FramesTest(GifTestCase):
             self.assertEqual(frame["control"]["transparent"], 0)
             self.assertEqual(frame["control"]["disposal"], 1)
 
+    def test_with_transparent_the_flag_is_on_the_index_is_kept_and_the_disposal_is_2(self):
+        gif = read_gif(encode_gif(3, 2, self.frames, self.palette, [5, 5, 5, 5], transparent=3))
+        for frame in gif["frames"]:
+            self.assertTrue(frame["control"]["has_transparent"])
+            self.assertEqual(frame["control"]["transparent"], 3)
+            self.assertEqual(frame["control"]["disposal"], 2)
+        self.assertEqual([frame["pixels"] for frame in gif["frames"]], self.frames)
+
+    def test_index_0_can_be_the_transparent_one(self):
+        gif = read_gif(encode_gif(3, 2, self.frames[:1], self.palette, [5], transparent=0))
+        control = gif["frames"][0]["control"]
+        self.assertTrue(control["has_transparent"])
+        self.assertEqual(control["transparent"], 0)
+        self.assertEqual(control["disposal"], 2)
+
     def test_one_frame_has_no_loop_block(self):
         gif = read_gif(encode_gif(3, 2, self.frames[:1], self.palette, [5]))
         self.assertIsNone(gif["loop"])
@@ -451,6 +466,12 @@ class ErrorsTest(unittest.TestCase):
                     with self.assertRaisesRegex(PixelRowsError, "loop"):
                         encode_gif(1, 1, [b"\x00"] * count, colours(2), [1] * count, loop=bad)
 
+    def test_transparent_outside_the_palette(self):
+        for bad in (-1, 3, 4, 256, 1.0, "0"):
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(PixelRowsError, "transparent"):
+                    encode_gif(1, 1, [b"\x00"], colours(3), [1], transparent=bad)
+
     def test_width_or_height_that_cannot_be_stored(self):
         for width, height in ((0, 1), (1, 0), (-1, 1), (65536, 1), (1, 65536), (1.0, 1)):
             with self.subTest(width=width, height=height):
@@ -469,8 +490,8 @@ class WriteGifTest(unittest.TestCase):
     def test_writes_what_encode_gif_returns_and_makes_the_folders(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "out" / "clips" / "blink.gif"
-            write_gif(path, *self.args, loop=2)
-            self.assertEqual(path.read_bytes(), encode_gif(*self.args, loop=2))
+            write_gif(path, *self.args, loop=2, transparent=0)
+            self.assertEqual(path.read_bytes(), encode_gif(*self.args, loop=2, transparent=0))
 
     def test_takes_the_path_as_text(self):
         with tempfile.TemporaryDirectory() as folder:

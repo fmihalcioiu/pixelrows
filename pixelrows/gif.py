@@ -98,14 +98,15 @@ def _sub_blocks(data: bytes) -> bytes:
 
 
 def encode_gif(width: int, height: int, frames: Sequence[bytes], palette: Sequence[RGB],
-               delays: Sequence[int], loop: int = 0) -> bytes:
+               delays: Sequence[int], loop: int = 0, transparent: int | None = None) -> bytes:
     """
     The bytes of a GIF89a file that shows `frames` one after the other.
 
     Each frame is `width * height` bytes, one index into `palette` a pixel, row
     by row from the top. `delays` has one time a frame, in hundredths of a
     second. `loop` is how often the clip repeats, 0 for ever; it is stored only
-    when there is more than one frame.
+    when there is more than one frame. `transparent` is the index that shows
+    what is behind the picture, if any does.
     """
     for name, value in (("width", width), ("height", height)):
         if not _is_whole(value, 1, _MAX_U16):
@@ -132,6 +133,10 @@ def encode_gif(width: int, height: int, frames: Sequence[bytes], palette: Sequen
             raise PixelRowsError(f"gif: delay {i} must be a whole number from 0 to {_MAX_U16}, got {delay!r}")
     if not _is_whole(loop, 0, _MAX_U16):
         raise PixelRowsError(f"gif: loop must be a whole number from 0 to {_MAX_U16}, got {loop!r}")
+    if transparent is not None and not _is_whole(transparent, 0, len(colours) - 1):
+        raise PixelRowsError(
+            f"gif: transparent must be an index from 0 to {len(colours) - 1}, got {transparent!r}"
+        )
     size = width * height
     for i, frame in enumerate(frames):
         if not isinstance(frame, (bytes, bytearray)):
@@ -146,17 +151,23 @@ def encode_gif(width: int, height: int, frames: Sequence[bytes], palette: Sequen
             )
 
     bits = _table_bits(len(colours))
+    # The background is the transparent index when there is one, so that a frame
+    # restored to background is cleared to nothing.
+    background = 0 if transparent is None else transparent
     out = bytearray(b"GIF89a")
     # Logical screen: a global table follows; colour resolution and table size are both `bits`.
-    out += struct.pack("<HHBBB", width, height, 0x80 | ((bits - 1) << 4) | (bits - 1), 0, 0)
+    out += struct.pack("<HHBBB", width, height, 0x80 | ((bits - 1) << 4) | (bits - 1), background, 0)
     # The table is black wherever the palette does not reach.
     out += b"".join(bytes(colour) for colour in colours).ljust(3 << bits, b"\x00")
     if len(frames) > 1:
         out += b"\x21\xff\x0bNETSCAPE2.0\x03\x01" + struct.pack("<H", loop) + b"\x00"
-    control = 1 << 2  # disposal 1: leave the frame in place
+    if transparent is None:
+        control, see_through = 1 << 2, 0        # disposal 1: leave the frame in place
+    else:
+        control, see_through = (2 << 2) | 1, transparent    # disposal 2: restore to background
     min_code_size = max(2, bits)
     for frame, delay in zip(frames, delays):
-        out += b"\x21\xf9\x04" + struct.pack("<BHB", control, delay, 0) + b"\x00"
+        out += b"\x21\xf9\x04" + struct.pack("<BHB", control, delay, see_through) + b"\x00"
         out += b"\x2c" + struct.pack("<HHHHB", 0, 0, width, height, 0)
         out.append(min_code_size)
         out += _sub_blocks(_lzw(frame, min_code_size))
@@ -165,9 +176,10 @@ def encode_gif(width: int, height: int, frames: Sequence[bytes], palette: Sequen
 
 
 def write_gif(path: str | os.PathLike[str], width: int, height: int, frames: Sequence[bytes],
-              palette: Sequence[RGB], delays: Sequence[int], loop: int = 0) -> None:
+              palette: Sequence[RGB], delays: Sequence[int], loop: int = 0,
+              transparent: int | None = None) -> None:
     """Writes the frames to `path` as a GIF file. Folders on the way that do not exist are made."""
-    data = encode_gif(width, height, frames, palette, delays, loop)
+    data = encode_gif(width, height, frames, palette, delays, loop, transparent)
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
