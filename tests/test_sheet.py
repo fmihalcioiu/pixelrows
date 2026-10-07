@@ -15,10 +15,11 @@ from pixelrows.sheet import (
     PAGE,
     PLATE,
     PLATE_GAP,
+    anim_strip,
     contact_sheet,
 )
 from pixelrows.sprite import Sprite
-from pixelrows.spriteset import SpriteSet
+from pixelrows.spriteset import Anim, SpriteSet
 
 RED = "#ff0000"
 GREEN = "#00ff00"
@@ -98,6 +99,18 @@ def dots(chars):
 def bars(count, width):
     """A set of `count` sprites, each one row of `width` red cells."""
     return set_of(*(Sprite(f"bar{index}", ["r" * width]) for index in range(count)))
+
+
+def stepping(index):
+    """A frame of 6 by 4: a red cell `index` along its top row and a green one in its bottom-left corner."""
+    return ["." * index + "r" + "." * (5 - index), "......", "......", "g....."]
+
+
+def walk(frames=4, fps=10):
+    """A set with the clip 'walk': `frames` frames named w0, w1 and so on, each as `stepping` draws it."""
+    spriteset = set_of(*(Sprite(f"w{index}", stepping(index)) for index in range(frames)))
+    spriteset.add_anim("walk", [f"w{index}" for index in range(frames)], fps)
+    return spriteset
 
 
 class LayoutNumbersTest(unittest.TestCase):
@@ -577,6 +590,345 @@ class SheetScalesTest(unittest.TestCase):
     def test_error_is_a_value_error(self):
         with self.assertRaises(ValueError):
             contact_sheet(SpriteSet(PALETTE))
+
+
+class StripSizeTest(unittest.TestCase):
+    def test_gives_an_image(self):
+        self.assertIsInstance(anim_strip(walk(), "walk"), Image)
+
+    def test_size_of_four_frames_without_labels(self):
+        # At scale 8 the plate of a 6 by 4 frame is (6 + 2) * 8 by (4 + 2) * 8.
+        image = anim_strip(walk(), "walk", labels=False)
+        self.assertEqual(image.width, MARGIN + 64 * 4 + CELL_GAP * 3 + MARGIN)
+        self.assertEqual(image.height, MARGIN + 48 + MARGIN)
+
+    def test_size_of_four_frames_with_labels(self):
+        # The labels are at scale 2, each line 7 * 2 tall. The title, 22 glyphs, is
+        # (22 * 6 - 1) * 2 = 262 wide, less than the four plates and their gaps, and no
+        # label under a frame is as wide as its plate. The title line has its gap under
+        # it, and the two lines under the frames each have theirs above.
+        image = anim_strip(walk(), "walk")
+        self.assertEqual(image.width, MARGIN + 64 * 4 + CELL_GAP * 3 + MARGIN)
+        self.assertEqual(image.height, MARGIN + (14 + LABEL_GAP[2]) + 48 + (LABEL_GAP[2] + 14) * 2 + MARGIN)
+
+    def test_title_wider_than_the_frames_widens_the_page(self):
+        # 'WALK  1 FRAME  10 FPS' is 21 glyphs, (21 * 6 - 1) * 2 = 250 wide, and the one plate is 64.
+        image = anim_strip(walk(frames=1), "walk")
+        self.assertEqual(image.width, MARGIN + 250 + MARGIN)
+        self.assertEqual(runs(image, MARGIN + 14 + LABEL_GAP[2], PLATE), [(MARGIN, 64)])
+
+    def test_default_scale_is_eight(self):
+        self.assertEqual(anim_strip(walk(), "walk"), anim_strip(walk(), "walk", scale=8))
+
+
+class StripPlateTest(unittest.TestCase):
+    def test_whole_strip_at_scale_one(self):
+        edge = "_" * MARGIN
+        gap = "_" * CELL_GAP
+        blank = "_" * (MARGIN + 8 + CELL_GAP + 8 + MARGIN)
+        self.assertEqual(
+            rows(anim_strip(walk(frames=2), "walk", scale=1, labels=False)),
+            [blank] * MARGIN
+            + [
+                edge + "pppppppp" + gap + "pppppppp" + edge,
+                edge + "prpppppp" + gap + "pprppppp" + edge,
+                edge + "pppppppp" + gap + "pppppppp" + edge,
+                edge + "pppppppp" + gap + "pppppppp" + edge,
+                edge + "pgpppppp" + gap + "pgpppppp" + edge,
+                edge + "pppppppp" + gap + "pppppppp" + edge,
+            ]
+            + [blank] * MARGIN,
+        )
+
+    def test_one_plate_a_frame(self):
+        for frames in (1, 2, 4, 6):
+            with self.subTest(frames=frames):
+                image = anim_strip(walk(frames=frames), "walk", labels=False)
+                expected = [(MARGIN + number * (64 + CELL_GAP), 64) for number in range(frames)]
+                self.assertEqual(runs(image, MARGIN, PLATE), expected)
+                self.assertEqual(runs(image, MARGIN + 47, PLATE), expected)
+
+    def test_one_plate_a_frame_under_the_title(self):
+        image = anim_strip(walk(), "walk")
+        top = MARGIN + 14 + LABEL_GAP[2]
+        expected = [(MARGIN + number * (64 + CELL_GAP), 64) for number in range(4)]
+        self.assertEqual(runs(image, top - 1, PLATE), [])
+        self.assertEqual(runs(image, top, PLATE), expected)
+        self.assertEqual(runs(image, top + 47, PLATE), expected)
+        self.assertEqual(runs(image, top + 48, PLATE), [])
+
+    def test_frames_are_eight_apart(self):
+        image = anim_strip(walk(), "walk", labels=False)
+        for number in range(3):
+            with self.subTest(number=number):
+                left = MARGIN + 64 + number * (64 + CELL_GAP)
+                self.assertEqual(
+                    cut(image, left, 0, CELL_GAP, image.height),
+                    Image(CELL_GAP, image.height, PAGE),
+                )
+
+    def test_page_colour_at_the_corners_of_the_page(self):
+        for labels in (True, False):
+            image = anim_strip(walk(), "walk", labels=labels)
+            for x in (0, image.width - 1):
+                for y in (0, image.height - 1):
+                    with self.subTest(labels=labels, x=x, y=y):
+                        self.assertEqual(image.get(x, y), pixel(PAGE))
+
+    def test_plate_colour_at_the_corners_of_each_plate(self):
+        image = anim_strip(walk(), "walk")
+        top = MARGIN + 14 + LABEL_GAP[2]
+        for number in range(4):
+            left = MARGIN + number * (64 + CELL_GAP)
+            for x in (left, left + 63):
+                for y in (top, top + 47):
+                    with self.subTest(number=number, x=x, y=y):
+                        self.assertEqual(image.get(x, y), pixel(PLATE))
+
+    def test_painted_pixel_of_each_frame_is_a_block_at_its_place_and_colour(self):
+        # Frame `number` has its red cell `number` along the top row and its green one at the bottom left.
+        image = anim_strip(walk(), "walk")
+        top = MARGIN + 14 + LABEL_GAP[2] + 8
+        for number in range(4):
+            left = MARGIN + number * (64 + CELL_GAP) + 8
+            for cell_x, cell_y, colour in ((number, 0, RED), (0, 3, GREEN)):
+                for x in (left + cell_x * 8, left + cell_x * 8 + 7):
+                    for y in (top + cell_y * 8, top + cell_y * 8 + 7):
+                        with self.subTest(number=number, x=x, y=y):
+                            self.assertEqual(image.get(x, y), pixel(colour))
+
+    def test_painted_pixel_is_at_its_place_at_scale_three(self):
+        image = anim_strip(walk(), "walk", scale=3, labels=False)
+        for number in range(4):
+            left = MARGIN + number * (24 + CELL_GAP) + 3
+            with self.subTest(number=number):
+                self.assertEqual(image.get(left + number * 3, MARGIN + 3), pixel(RED))
+                self.assertEqual(image.get(left + number * 3 + 2, MARGIN + 3 + 2), pixel(RED))
+                self.assertEqual(image.get(left + number * 3 + 3, MARGIN + 3), pixel(PLATE))
+                self.assertEqual(image.get(left, MARGIN + 3 + 9), pixel(GREEN))
+
+    def test_frames_are_in_play_order(self):
+        spriteset = walk()
+        spriteset.add_anim("back", ["w3", "w1"], 10)
+        image = anim_strip(spriteset, "back", labels=False)
+        second = MARGIN + 64 + CELL_GAP
+        self.assertEqual(image.width, MARGIN + 64 * 2 + CELL_GAP + MARGIN)
+        self.assertEqual(runs(image, MARGIN + 8, RED), [(MARGIN + 8 + 3 * 8, 8), (second + 8 + 1 * 8, 8)])
+
+    def test_frame_shown_twice_has_two_plates(self):
+        spriteset = walk()
+        spriteset.add_anim("rock", ["w0", "w1", "w0"], 10)
+        image = anim_strip(spriteset, "rock", labels=False)
+        step = 64 + CELL_GAP
+        self.assertEqual(runs(image, MARGIN, PLATE), [(MARGIN, 64), (MARGIN + step, 64), (MARGIN + step * 2, 64)])
+        self.assertEqual(
+            runs(image, MARGIN + 8, RED),
+            [(MARGIN + 8, 8), (MARGIN + step + 8 + 8, 8), (MARGIN + step * 2 + 8, 8)],
+        )
+
+    def test_background_is_the_colour_of_the_plates(self):
+        for background in (WHITE, (255, 255, 255)):
+            with self.subTest(background=background):
+                image = anim_strip(walk(), "walk", background=background, labels=False)
+                self.assertEqual(len(runs(image, MARGIN, WHITE)), 4)
+                self.assertNotIn(pixel(PLATE), image.colours())
+                self.assertEqual(image.get(0, 0), pixel(PAGE))
+
+    def test_own_palette_entry_of_a_frame_shows(self):
+        spriteset = set_of(Sprite("plain", ["rg"]), Sprite("own", ["rg"], {"g": WHITE}))
+        spriteset.add_anim("blink", ["plain", "own"], 2)
+        image = anim_strip(spriteset, "blink", scale=1, labels=False)
+        second = MARGIN + 4 + CELL_GAP
+        self.assertEqual(image.get(MARGIN + 2, MARGIN + 1), pixel(GREEN))
+        self.assertEqual(image.get(second + 1, MARGIN + 1), pixel(RED))
+        self.assertEqual(image.get(second + 2, MARGIN + 1), pixel(WHITE))
+
+
+class StripLabelTest(unittest.TestCase):
+    def title(self, image, scale=2):
+        """The band of the page the title line is drawn in, from margin to margin."""
+        return cut(image, MARGIN, MARGIN, image.width - 2 * MARGIN, GLYPH_H * scale)
+
+    def titled(self, image, text, scale=2):
+        """The band the title line should be: `text` in INK from the left margin, and page after it."""
+        return written(text, INK, scale, image.width - 2 * MARGIN)
+
+    def test_title_is_above_the_frames_in_ink(self):
+        image = anim_strip(walk(), "walk")
+        self.assertEqual(self.title(image), self.titled(image, "WALK  4 FRAMES  10 FPS"))
+
+    def test_gap_under_the_title_is_page(self):
+        image = anim_strip(walk(), "walk")
+        gap = LABEL_GAP[2]
+        self.assertEqual(cut(image, 0, MARGIN + 14, image.width, gap), Image(image.width, gap, PAGE))
+
+    def test_title_gives_a_whole_fps_without_a_trailing_zero(self):
+        for fps, text in ((10.0, "10 FPS"), (10, "10 FPS"), (1.0, "1 FPS"), (24.0, "24 FPS"), (100.0, "100 FPS")):
+            with self.subTest(fps=fps):
+                image = anim_strip(walk(fps=fps), "walk")
+                self.assertEqual(self.title(image), self.titled(image, "WALK  4 FRAMES  " + text))
+
+    def test_title_gives_an_fps_that_is_not_whole_as_it_is(self):
+        for fps, text in ((1.5, "1.5 FPS"), (0.5, "0.5 FPS"), (12.25, "12.25 FPS")):
+            with self.subTest(fps=fps):
+                image = anim_strip(walk(fps=fps), "walk")
+                self.assertEqual(self.title(image), self.titled(image, "WALK  4 FRAMES  " + text))
+
+    def test_title_of_a_clip_of_one_frame_says_frame(self):
+        image = anim_strip(walk(frames=1), "walk")
+        self.assertEqual(self.title(image), self.titled(image, "WALK  1 FRAME  10 FPS"))
+
+    def test_title_of_a_clip_of_two_frames_says_frames(self):
+        image = anim_strip(walk(frames=2), "walk")
+        self.assertEqual(self.title(image), self.titled(image, "WALK  2 FRAMES  10 FPS"))
+
+    def test_title_names_the_clip(self):
+        spriteset = walk()
+        spriteset.add_anim("slow_turn", ["w1", "w0", "w3"], 3)
+        image = anim_strip(spriteset, "slow_turn")
+        self.assertEqual(self.title(image), self.titled(image, "SLOW_TURN  3 FRAMES  3 FPS"))
+
+    def test_number_from_0_is_under_each_frame_in_ink(self):
+        image = anim_strip(walk(), "walk")
+        top = MARGIN + 14 + LABEL_GAP[2] + 48 + LABEL_GAP[2]
+        for number in range(4):
+            with self.subTest(number=number):
+                left = MARGIN + number * (64 + CELL_GAP)
+                self.assertEqual(cut(image, left, top, 64, 14), written(str(number), INK, 2, 64))
+
+    def test_name_of_the_sprite_is_under_the_number_in_dim(self):
+        image = anim_strip(walk(), "walk")
+        top = MARGIN + 14 + LABEL_GAP[2] + 48 + LABEL_GAP[2] + 14 + LABEL_GAP[2]
+        for number in range(4):
+            with self.subTest(number=number):
+                left = MARGIN + number * (64 + CELL_GAP)
+                self.assertEqual(cut(image, left, top, 64, 14), written(f"W{number}", DIM, 2, 64))
+
+    def test_gaps_above_the_lines_under_the_frames_are_page(self):
+        image = anim_strip(walk(), "walk")
+        gap = LABEL_GAP[2]
+        foot = MARGIN + 14 + gap + 48
+        for top in (foot, foot + gap + 14):
+            with self.subTest(top=top):
+                self.assertEqual(cut(image, 0, top, image.width, gap), Image(image.width, gap, PAGE))
+
+    def test_frame_shown_twice_is_numbered_each_time(self):
+        spriteset = walk()
+        spriteset.add_anim("rock", ["w0", "w1", "w0"], 10)
+        image = anim_strip(spriteset, "rock")
+        top = MARGIN + 14 + LABEL_GAP[2] + 48 + LABEL_GAP[2]
+        for number, name in enumerate(("W0", "W1", "W0")):
+            with self.subTest(number=number):
+                left = MARGIN + number * (64 + CELL_GAP)
+                self.assertEqual(cut(image, left, top, 64, 14), written(str(number), INK, 2, 64))
+                self.assertEqual(cut(image, left, top + 14 + LABEL_GAP[2], 64, 14), written(name, DIM, 2, 64))
+
+    def test_no_ink_or_dim_pixel_without_labels(self):
+        for scale in (1, 3, 8):
+            with self.subTest(scale=scale):
+                colours = anim_strip(walk(), "walk", scale=scale, labels=False).colours()
+                self.assertNotIn(pixel(INK), colours)
+                self.assertNotIn(pixel(DIM), colours)
+
+    def test_ink_and_dim_pixels_with_labels(self):
+        colours = anim_strip(walk(), "walk").colours()
+        self.assertIn(pixel(INK), colours)
+        self.assertIn(pixel(DIM), colours)
+
+    def test_label_font_is_at_scale_one_below_a_scale_of_four(self):
+        # At scale 3 the plates are 24 by 18. The title is (22 * 6 - 1) * 1 = 131 wide,
+        # wider than the four plates and their gaps, 120.
+        image = anim_strip(walk(), "walk", scale=LARGE_SCALE - 1)
+        self.assertEqual(image.width, MARGIN + 131 + MARGIN)
+        self.assertEqual(image.height, MARGIN + (7 + LABEL_GAP[1]) + 18 + (LABEL_GAP[1] + 7) * 2 + MARGIN)
+        self.assertEqual(self.title(image, 1), self.titled(image, "WALK  4 FRAMES  10 FPS", 1))
+        top = MARGIN + 7 + LABEL_GAP[1] + 18 + LABEL_GAP[1]
+        left = MARGIN + 24 + CELL_GAP
+        self.assertEqual(cut(image, left, top, 24, 7), written("1", INK, 1, 24))
+        self.assertEqual(cut(image, left, top + 7 + LABEL_GAP[1], 24, 7), written("W1", DIM, 1, 24))
+
+    def test_label_font_is_at_scale_two_from_a_scale_of_four(self):
+        # At scale 4 the plates are 32 by 24, and the title, 262 wide, is wider than the four of them.
+        image = anim_strip(walk(), "walk", scale=LARGE_SCALE)
+        self.assertEqual(image.width, MARGIN + 262 + MARGIN)
+        self.assertEqual(image.height, MARGIN + (14 + LABEL_GAP[2]) + 24 + (LABEL_GAP[2] + 14) * 2 + MARGIN)
+        self.assertEqual(self.title(image), self.titled(image, "WALK  4 FRAMES  10 FPS"))
+        top = MARGIN + 14 + LABEL_GAP[2] + 24 + LABEL_GAP[2]
+        left = MARGIN + 32 + CELL_GAP
+        self.assertEqual(cut(image, left, top, 32, 14), written("1", INK, 2, 32))
+        self.assertEqual(cut(image, left, top + 14 + LABEL_GAP[2], 32, 14), written("W1", DIM, 2, 32))
+
+    def test_long_sprite_name_widens_every_cell(self):
+        # At scale 1 the plates are 8 by 6 and a name of 11 glyphs is 11 * 6 - 1 = 65 wide.
+        spriteset = set_of(Sprite("long_name_0", stepping(0)), Sprite("long_name_1", stepping(1)))
+        spriteset.add_anim("go", ["long_name_0", "long_name_1"], 10)
+        image = anim_strip(spriteset, "go", scale=1)
+        self.assertEqual(text_width("long_name_0"), 65)
+        self.assertEqual(image.width, MARGIN + 65 + CELL_GAP + 65 + MARGIN)
+        top = MARGIN + 7 + LABEL_GAP[1]
+        second = MARGIN + 65 + CELL_GAP
+        self.assertEqual(runs(image, top, PLATE), [(MARGIN, 8), (second, 8)])
+        names = top + 6 + LABEL_GAP[1] + 7 + LABEL_GAP[1]
+        self.assertEqual(cut(image, MARGIN, names, 65, 7), written("LONG_NAME_0", DIM, 1, 65))
+        self.assertEqual(cut(image, second, names, 65, 7), written("LONG_NAME_1", DIM, 1, 65))
+
+
+class StripClipTest(unittest.TestCase):
+    def test_anim_by_name_or_as_an_anim(self):
+        spriteset = walk()
+        self.assertEqual(anim_strip(spriteset, spriteset.anim("walk")), anim_strip(spriteset, "walk"))
+
+    def test_anim_that_is_not_in_the_set_plays_the_sprites_of_the_set(self):
+        spriteset = walk()
+        image = anim_strip(spriteset, Anim("turn", ("w1", "w0"), 4))
+        spriteset.add_anim("turn", ["w1", "w0"], 4)
+        self.assertEqual(image, anim_strip(spriteset, "turn"))
+
+    def test_no_such_anim_raises_through_the_set(self):
+        with self.assertRaises(PixelRowsError) as caught:
+            anim_strip(walk(), "run")
+        self.assertEqual(str(caught.exception), "no anim named 'run'")
+
+    def test_clip_with_a_frame_that_names_no_sprite_raises_through_the_set(self):
+        spriteset = walk()
+        spriteset.add_anim("limp", ["w0", "w9"], 10)
+        for labels in (True, False):
+            with self.subTest(labels=labels):
+                with self.assertRaises(PixelRowsError) as caught:
+                    anim_strip(spriteset, "limp", labels=labels)
+                self.assertEqual(str(caught.exception), "anim 'limp' names 'w9', which is not a sprite")
+
+    def test_clip_with_frames_of_different_sizes_raises_through_the_set(self):
+        spriteset = walk()
+        spriteset.add(Sprite("big", ["rrrrrrr"] * 4))
+        spriteset.add_anim("odd", ["w0", "big"], 10)
+        with self.assertRaises(PixelRowsError) as caught:
+            anim_strip(spriteset, "odd")
+        self.assertEqual(str(caught.exception), "anim 'odd': frame 'big' is 7x4, the first frame is 6x4")
+
+    def test_character_the_palette_lacks_raises_naming_the_sprite(self):
+        spriteset = set_of(Sprite("fine", ["rg"]), Sprite("odd", ["rx"]))
+        spriteset.add_anim("blink", ["fine", "odd"], 2)
+        with self.assertRaises(PixelRowsError) as caught:
+            anim_strip(spriteset, "blink")
+        self.assertEqual(str(caught.exception), "sprite 'odd': the palette has no colour for 'x'")
+
+    def test_scale_below_one_or_not_a_whole_number_raises(self):
+        for bad in (0, -1, 1.5, 2.0, True, "8", None, (8,)):
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError):
+                    anim_strip(walk(), "walk", scale=bad)
+
+    def test_scale_error_says_what_was_given(self):
+        with self.assertRaises(PixelRowsError) as caught:
+            anim_strip(walk(), "walk", scale=0)
+        self.assertEqual(str(caught.exception), "scale must be a whole number of 1 or more, got 0")
+
+    def test_background_that_is_not_a_colour_raises(self):
+        for bad in ("red", "#12", (1, 2), (0, 0, 256), None):
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError):
+                    anim_strip(walk(), "walk", background=bad)
 
 
 if __name__ == "__main__":

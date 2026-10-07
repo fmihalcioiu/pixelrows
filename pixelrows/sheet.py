@@ -9,7 +9,7 @@ from .image import Image
 from .palette import RGB, as_rgb
 from .render import draw_sprite
 from .sprite import Sprite
-from .spriteset import SpriteSet
+from .spriteset import Anim, SpriteSet
 
 PAGE = "#1e1e24"     # the page
 PLATE = "#4a4a55"    # behind each sprite, unless a background is given
@@ -90,6 +90,48 @@ def contact_sheet(spriteset: SpriteSet, names: Sequence[str] | None = None,
     return page
 
 
+def anim_strip(spriteset: SpriteSet, anim: Anim | str, scale: int = 8,
+               background: str | RGB = PLATE, labels: bool = True) -> Image:
+    """
+    A page with the frames of `anim` left to right in play order, one cell a frame.
+
+    Each frame is drawn at `scale` on a plate of `background` that is one
+    scaled pixel larger than the sprite on every side. With `labels`, a title
+    line above gives the clip's name, how many frames it has and its speed,
+    and under each frame are its number, counted from 0, and its sprite's
+    name. Every cell is the size of the largest.
+
+    PixelRowsError if the clip cannot play: there is no such anim, a frame
+    names no sprite, or the frames differ in size.
+    """
+    if not isinstance(anim, Anim):
+        anim = spriteset.anim(anim)
+    frames = spriteset.frames_of(anim)
+    _whole("scale", scale)
+    plate = as_rgb(background)
+    label_scale = _label_scale(scale)
+    cells = [
+        (frame, [(str(number), INK), (frame.name, DIM)] if labels else [])
+        for number, frame in enumerate(frames)
+    ]
+    title = _title(anim) if labels else ""
+    plate_width, plate_height = _plate_size(frames[0], scale)
+    cell_width = max(plate_width, max(_lines_width(lines, label_scale) for _, lines in cells))
+    top = MARGIN + (_lines_height(1, label_scale) if labels else 0)
+    foot = top + plate_height
+    page = Image(
+        max(_span(len(cells), cell_width), 2 * MARGIN + text_width(title, label_scale)),
+        foot + (_lines_height(2, label_scale) if labels else 0) + MARGIN,
+        PAGE,
+    )
+    draw_text(page, title, MARGIN, MARGIN, INK, label_scale)
+    for number, (frame, lines) in enumerate(cells):
+        left = MARGIN + number * (cell_width + CELL_GAP)
+        _draw_plate(page, spriteset, frame, left, top, scale, plate)
+        _draw_lines(page, lines, left, foot, label_scale)
+    return page
+
+
 def _chosen(spriteset: SpriteSet, names: Sequence[str] | None) -> list[Sprite]:
     """The sprites to show: those named, in that order, or every sprite of the set in its order."""
     if names is None:
@@ -113,6 +155,15 @@ def _checked_scales(scales: Sequence[int]) -> tuple[int, ...]:
     for scale in scales:
         _whole("scale", scale)
     return scales
+
+
+def _title(anim: Anim) -> str:
+    """The title line of a clip: its name, how many frames it has and its speed, as `WALK  4 FRAMES  10 FPS`."""
+    count = len(anim.frames)
+    fps = anim.fps
+    if isinstance(fps, float) and fps.is_integer():
+        fps = int(fps)
+    return f"{anim.name}  {count} {'FRAME' if count == 1 else 'FRAMES'}  {fps} FPS"
 
 
 def _whole(what: str, value: int) -> int:
