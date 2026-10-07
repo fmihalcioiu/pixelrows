@@ -1,4 +1,4 @@
-"""GIF89a files from palette indices, written with the standard library alone."""
+"""GIF89a files from frames of palette indices, written with the standard library alone."""
 from __future__ import annotations
 
 import os
@@ -97,17 +97,24 @@ def _sub_blocks(data: bytes) -> bytes:
     return bytes(out)
 
 
-def encode_gif(width: int, height: int, pixels: bytes, palette: Sequence[RGB]) -> bytes:
+def encode_gif(width: int, height: int, frames: Sequence[bytes], palette: Sequence[RGB],
+               delays: Sequence[int], loop: int = 0) -> bytes:
     """
-    The bytes of a GIF89a file that shows one image.
+    The bytes of a GIF89a file that shows `frames` one after the other.
 
-    `pixels` is `width * height` bytes, one index into `palette` a pixel, row
-    by row from the top.
+    Each frame is `width * height` bytes, one index into `palette` a pixel, row
+    by row from the top. `delays` has one time a frame, in hundredths of a
+    second. `loop` is how often the clip repeats, 0 for ever; it is stored only
+    when there is more than one frame.
     """
     for name, value in (("width", width), ("height", height)):
         if not _is_whole(value, 1, _MAX_U16):
             raise PixelRowsError(f"gif: {name} must be a whole number from 1 to {_MAX_U16}, got {value!r}")
+    frames = list(frames)
     palette = list(palette)
+    delays = list(delays)
+    if not frames:
+        raise PixelRowsError("gif: there are no frames")
     if not palette:
         raise PixelRowsError("gif: the palette is empty")
     if len(palette) > _MAX_COLOURS:
@@ -118,17 +125,25 @@ def encode_gif(width: int, height: int, pixels: bytes, palette: Sequence[RGB]) -
             colours.append(as_rgb(colour))
         except PixelRowsError as error:
             raise PixelRowsError(f"gif: palette entry {i}: {error}") from None
+    if len(delays) != len(frames):
+        raise PixelRowsError(f"gif: there are {len(frames)} frames and {len(delays)} delays")
+    for i, delay in enumerate(delays):
+        if not _is_whole(delay, 0, _MAX_U16):
+            raise PixelRowsError(f"gif: delay {i} must be a whole number from 0 to {_MAX_U16}, got {delay!r}")
+    if not _is_whole(loop, 0, _MAX_U16):
+        raise PixelRowsError(f"gif: loop must be a whole number from 0 to {_MAX_U16}, got {loop!r}")
     size = width * height
-    if not isinstance(pixels, (bytes, bytearray)):
-        raise PixelRowsError(f"gif: pixels must be bytes or a bytearray, got {type(pixels).__name__}")
-    if len(pixels) != size:
-        raise PixelRowsError(f"gif: pixels is {len(pixels)} bytes, {width}x{height} needs {size}")
-    if max(pixels) >= len(colours):
-        at = next(n for n, index in enumerate(pixels) if index >= len(colours))
-        raise PixelRowsError(
-            f"gif: pixels has index {pixels[at]} at ({at % width}, {at // width}), "
-            f"the palette has {len(colours)} colours"
-        )
+    for i, frame in enumerate(frames):
+        if not isinstance(frame, (bytes, bytearray)):
+            raise PixelRowsError(f"gif: frame {i} must be bytes or a bytearray, got {type(frame).__name__}")
+        if len(frame) != size:
+            raise PixelRowsError(f"gif: frame {i} is {len(frame)} bytes, {width}x{height} needs {size}")
+        if max(frame) >= len(colours):
+            at = next(n for n, index in enumerate(frame) if index >= len(colours))
+            raise PixelRowsError(
+                f"gif: frame {i} has index {frame[at]} at ({at % width}, {at // width}), "
+                f"the palette has {len(colours)} colours"
+            )
 
     bits = _table_bits(len(colours))
     out = bytearray(b"GIF89a")
@@ -136,18 +151,23 @@ def encode_gif(width: int, height: int, pixels: bytes, palette: Sequence[RGB]) -
     out += struct.pack("<HHBBB", width, height, 0x80 | ((bits - 1) << 4) | (bits - 1), 0, 0)
     # The table is black wherever the palette does not reach.
     out += b"".join(bytes(colour) for colour in colours).ljust(3 << bits, b"\x00")
+    if len(frames) > 1:
+        out += b"\x21\xff\x0bNETSCAPE2.0\x03\x01" + struct.pack("<H", loop) + b"\x00"
+    control = 1 << 2  # disposal 1: leave the frame in place
     min_code_size = max(2, bits)
-    out += b"\x2c" + struct.pack("<HHHHB", 0, 0, width, height, 0)
-    out.append(min_code_size)
-    out += _sub_blocks(_lzw(pixels, min_code_size))
+    for frame, delay in zip(frames, delays):
+        out += b"\x21\xf9\x04" + struct.pack("<BHB", control, delay, 0) + b"\x00"
+        out += b"\x2c" + struct.pack("<HHHHB", 0, 0, width, height, 0)
+        out.append(min_code_size)
+        out += _sub_blocks(_lzw(frame, min_code_size))
     out += b"\x3b"
     return bytes(out)
 
 
-def write_gif(path: str | os.PathLike[str], width: int, height: int, pixels: bytes,
-              palette: Sequence[RGB]) -> None:
-    """Writes the image to `path` as a GIF file. Folders on the way that do not exist are made."""
-    data = encode_gif(width, height, pixels, palette)
+def write_gif(path: str | os.PathLike[str], width: int, height: int, frames: Sequence[bytes],
+              palette: Sequence[RGB], delays: Sequence[int], loop: int = 0) -> None:
+    """Writes the frames to `path` as a GIF file. Folders on the way that do not exist are made."""
+    data = encode_gif(width, height, frames, palette, delays, loop)
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
