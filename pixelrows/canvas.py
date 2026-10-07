@@ -7,6 +7,10 @@ from .errors import PixelRowsError
 from .palette import RGB, TRANSPARENT, Palette
 from .sprite import Sprite
 
+# The cells around a cell as (dx, dy): the four beside it, and the four at its corners.
+_SIDES = ((0, -1), (-1, 0), (1, 0), (0, 1))
+_CORNERS = ((-1, -1), (1, -1), (-1, 1), (1, 1))
+
 
 def _whole(what: str, value: int) -> int:
     """`value` if it is a whole number of 1 or more."""
@@ -147,6 +151,29 @@ class Canvas:
         for row in self._grid:
             for x in range(self.width // 2):
                 row[-1 - x] = row[x]
+        return self
+
+    def outline(self, ch: str, grow: bool = False, diagonal: bool = False) -> Canvas:
+        """
+        Gives `ch` to every empty cell that has a painted cell above, below, left or right of it.
+
+        `diagonal` counts the four diagonals as well. It is decided from the canvas as it was
+        before the call, so the outline is one cell thick. `grow` first adds one empty cell on
+        every side: the canvas gets 2 wider and 2 taller and the art moves by (1, 1), so no
+        part of the outline is lost.
+        """
+        ch = _one_character(ch)
+        if grow:
+            blank = [TRANSPARENT] * (self.width + 2)
+            self._grid = [blank[:], *([TRANSPARENT, *row, TRANSPARENT] for row in self._grid), blank[:]]
+        before = Canvas.from_rows(self.rows())
+        around = _SIDES + _CORNERS if diagonal else _SIDES
+        for y in range(self.height):
+            for x in range(self.width):
+                if before.get(x, y) != TRANSPARENT:
+                    continue
+                if any(before.get(x + dx, y + dy) != TRANSPARENT for dx, dy in around):
+                    self._grid[y][x] = ch
         return self
 
     def rows(self) -> list[str]:

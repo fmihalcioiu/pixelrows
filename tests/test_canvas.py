@@ -14,6 +14,7 @@ WITH_A_CHARACTER = (
     ("px", lambda canvas, ch: canvas.px(1, 1, ch)),
     ("rect", lambda canvas, ch: canvas.rect(0, 0, 2, 2, ch)),
     ("line", lambda canvas, ch: canvas.line(0, 0, 2, 2, ch)),
+    ("outline", lambda canvas, ch: canvas.outline(ch)),
 )
 
 
@@ -512,6 +513,128 @@ class CanvasMirrorTest(unittest.TestCase):
         self.assertIs(canvas.mirror(), canvas)
 
 
+class CanvasOutlineTest(unittest.TestCase):
+    def test_empty_cells_above_below_left_and_right_get_the_character(self):
+        canvas = Canvas(5, 5).px(2, 2, "o").outline("k")
+        self.assertEqual(canvas.rows(), [".....", "..k..", ".kok.", "..k..", "....."])
+
+    def test_diagonal_adds_the_four_corners(self):
+        canvas = Canvas(5, 5).px(2, 2, "o").outline("k", diagonal=True)
+        self.assertEqual(canvas.rows(), [".....", ".kkk.", ".kok.", ".kkk.", "....."])
+
+    def test_cell_touched_only_at_a_corner_needs_diagonal(self):
+        rows = ["o..", "...", "..."]
+        self.assertEqual(Canvas.from_rows(rows).outline("k").rows(), ["ok.", "k..", "..."])
+        self.assertEqual(Canvas.from_rows(rows).outline("k", diagonal=True).rows(), ["ok.", "kk.", "..."])
+
+    def test_painted_cells_stay_as_they_are(self):
+        rows = [".....", ".ab..", ".cd..", "....."]
+        self.assertEqual(Canvas.from_rows(rows).outline("k").rows(), [".kk..", "kabk.", "kcdk.", ".kk.."])
+        self.assertEqual(
+            Canvas.from_rows(rows).outline("k", diagonal=True).rows(),
+            ["kkkk.", "kabk.", "kcdk.", "kkkk."],
+        )
+
+    def test_outline_cell_does_not_grow_a_second_ring(self):
+        self.assertEqual(Canvas(7, 1).px(0, 0, "o").outline("k").rows(), ["ok....."])
+        self.assertEqual(Canvas(7, 1).px(6, 0, "o").outline("k").rows(), [".....ko"])
+        self.assertEqual(Canvas(1, 5).px(0, 0, "o").outline("k").rows(), ["o", "k", ".", ".", "."])
+        self.assertEqual(Canvas(4, 3).px(0, 0, "o").outline("k", diagonal=True).rows(), ["ok..", "kk..", "...."])
+
+    def test_second_call_outlines_the_first_outline(self):
+        canvas = Canvas(7, 7).px(3, 3, "o").outline("a").outline("b")
+        self.assertEqual(
+            canvas.rows(),
+            [".......", "...b...", "..bab..", ".baoab.", "..bab..", "...b...", "......."],
+        )
+
+    def test_character_of_the_art_can_be_the_outline(self):
+        self.assertEqual(Canvas(5, 1).px(2, 0, "k").outline("k").rows(), [".kkk."])
+
+    def test_empty_cell_inside_the_art_is_outlined(self):
+        self.assertEqual(Canvas.from_rows(["ooo", "o.o", "ooo"]).outline("k").rows(), ["ooo", "oko", "ooo"])
+        self.assertEqual(
+            Canvas.from_rows(["ooooo", "o...o", "o...o", "o...o", "ooooo"]).outline("k").rows(),
+            ["ooooo", "okkko", "ok.ko", "okkko", "ooooo"],
+        )
+
+    def test_empty_cell_between_two_painted_cells_is_outlined_once(self):
+        self.assertEqual(Canvas.from_rows([".o", "o."]).outline("k").rows(), ["ko", "ok"])
+        self.assertEqual(Canvas.from_rows(["a.b"]).outline("k").rows(), ["akb"])
+
+    def test_canvas_with_nothing_painted_gets_no_outline(self):
+        self.assertEqual(Canvas(3, 2).outline("k").rows(), ["...", "..."])
+        self.assertEqual(Canvas(3, 2).outline("k", diagonal=True).rows(), ["...", "..."])
+
+    def test_edge_of_the_canvas_cuts_the_outline_off(self):
+        self.assertEqual(Canvas.from_rows(["ab", "cd"]).outline("k").rows(), ["ab", "cd"])
+        self.assertEqual(Canvas.from_rows(["o..", "..."]).outline("k").rows(), ["ok.", "k.."])
+        self.assertEqual(Canvas(3, 3).px(0, 1, "o").outline("k").rows(), ["k..", "ok.", "k.."])
+        self.assertEqual(Canvas(3, 2).px(2, 1, "o").outline("k", diagonal=True).rows(), [".kk", ".ko"])
+
+    def test_size_stays_without_grow(self):
+        canvas = Canvas.from_rows(["ab.", "cd."]).outline("k")
+        self.assertEqual((canvas.width, canvas.height), (3, 2))
+
+    def test_grow_adds_2_to_the_width_and_the_height(self):
+        canvas = Canvas.from_rows(["ab.", "cd."]).outline("k", grow=True)
+        self.assertEqual((canvas.width, canvas.height), (5, 4))
+        self.assertEqual([len(row) for row in canvas.rows()], [5, 5, 5, 5])
+
+    def test_grow_moves_the_art_by_1_and_1(self):
+        canvas = Canvas.from_rows(["ab", "cd"]).outline("k", grow=True)
+        self.assertEqual(canvas.rows(), [".kk.", "kabk", "kcdk", ".kk."])
+        self.assertEqual((canvas.get(0, 0), canvas.get(1, 1), canvas.get(2, 2)), (".", "a", "d"))
+
+    def test_grow_loses_no_part_of_the_outline(self):
+        self.assertEqual(Canvas.from_rows(["o"]).outline("k", grow=True).rows(), [".k.", "kok", ".k."])
+        self.assertEqual(
+            Canvas.from_rows(["o"]).outline("k", grow=True, diagonal=True).rows(),
+            ["kkk", "kok", "kkk"],
+        )
+        self.assertEqual(
+            Canvas.from_rows(["ab", "cd"]).outline("k", grow=True, diagonal=True).rows(),
+            ["kkkk", "kabk", "kcdk", "kkkk"],
+        )
+
+    def test_grow_with_nothing_painted_only_grows(self):
+        self.assertEqual(Canvas(2, 1).outline("k", grow=True).rows(), ["....", "....", "...."])
+
+    def test_every_call_with_grow_grows_again(self):
+        canvas = Canvas.from_rows(["o"]).outline("a", grow=True).outline("b", grow=True)
+        self.assertEqual(canvas.rows(), ["..b..", ".bab.", "baoab", ".bab.", "..b.."])
+        self.assertEqual((canvas.width, canvas.height), (5, 5))
+
+    def test_drawing_after_grow_goes_by_the_new_size(self):
+        canvas = Canvas(1, 1).outline("k", grow=True).px(2, 2, "x").px(3, 3, "y")
+        self.assertEqual(canvas.rows(), ["...", "...", "..x"])
+
+    def test_grow_and_diagonal_can_be_given_by_place(self):
+        self.assertEqual(Canvas.from_rows(["o"]).outline("k", True).rows(), [".k.", "kok", ".k."])
+        self.assertEqual(Canvas.from_rows(["o"]).outline("k", True, True).rows(), ["kkk", "kok", "kkk"])
+        self.assertEqual(Canvas.from_rows(["o.", ".."]).outline("k", False, True).rows(), ["ok", "kk"])
+
+    def test_dot_is_allowed_and_outlines_nothing(self):
+        self.assertEqual(Canvas(3, 3).px(1, 1, "o").outline(".").rows(), ["...", ".o.", "..."])
+        self.assertEqual(Canvas.from_rows(["o"]).outline(".", grow=True).rows(), ["...", ".o.", "..."])
+
+    def test_character_is_checked_when_nothing_would_be_outlined(self):
+        with self.assertRaises(PixelRowsError):
+            Canvas(3, 3).outline("ab")
+
+    def test_refused_character_does_not_grow_the_canvas(self):
+        canvas = Canvas.from_rows(["ab", "cd"])
+        with self.assertRaises(PixelRowsError):
+            canvas.outline(" ", grow=True)
+        self.assertEqual(canvas.rows(), ["ab", "cd"])
+
+    def test_returns_the_canvas(self):
+        canvas = Canvas(3, 3).px(1, 1, "o")
+        self.assertIs(canvas.outline("k"), canvas)
+        self.assertIs(canvas.outline("k", grow=True), canvas)
+        self.assertIs(canvas.outline("k", diagonal=True), canvas)
+
+
 class CanvasRowsTest(unittest.TestCase):
     def test_rows_are_a_list_of_strings(self):
         rows = Canvas(3, 2).px(1, 0, "o").rows()
@@ -574,6 +697,36 @@ class CanvasToSpriteTest(unittest.TestCase):
         with self.assertRaises(PixelRowsError) as caught:
             Canvas(2, 2).to_sprite("hat", ["o"])
         self.assertEqual(str(caught.exception), "sprite 'hat': the palette is a Palette or a mapping, got ['o']")
+
+
+class CanvasFigureTest(unittest.TestCase):
+    def test_mushroom_drawn_in_one_chain_of_calls(self):
+        canvas = (
+            Canvas(7, 6)
+            .rect(0, 2, 4, 2, "r")
+            .line(2, 0, 0, 2, "r")
+            .rect(2, 1, 2, 1, "r")
+            .px(3, 0, "r")
+            .rect(2, 4, 2, 2, "s")
+            .mirror()
+            .stamp(1, 1, ["w.", ".w"])
+            .stamp(4, 1, ["w.", ".w"], flip=True)
+            .outline("k", grow=True)
+        )
+        self.assertEqual(
+            canvas.rows(),
+            [
+                "...kkk...",
+                "..krrrk..",
+                ".kwrrrwk.",
+                "krrwrwrrk",
+                "krrrrrrrk",
+                ".kkssskk.",
+                "..ksssk..",
+                "...kkk...",
+            ],
+        )
+        self.assertEqual((canvas.width, canvas.height), (9, 8))
 
 
 if __name__ == "__main__":
