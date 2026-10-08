@@ -31,6 +31,7 @@ class Finding:
 class Options:
     """What the rules go by."""
 
+    outline: str | None = None  # the outline character; without one, outline_gap is skipped
     lone_allow: frozenset[str] = frozenset()  # characters a lone pixel may be: eyes, glints
     max_colours: int | None = None  # colours a sprite may use; None works it out from its size
     pixels_per_colour: int = 6  # painted pixels that allow a sprite one colour, when its size sets the count
