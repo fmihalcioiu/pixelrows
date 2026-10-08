@@ -120,6 +120,72 @@ class LonePixelTest(unittest.TestCase):
         self.assertEqual(found(), [])
 
 
+class ColourCountTest(unittest.TestCase):
+    def assert_flagged(self, message, sprite, **options):
+        self.assertEqual(found(sprite, **options), [Finding("colour_count", sprite.name, message)])
+
+    def test_as_many_colours_as_the_size_allows_are_not_flagged(self):
+        flag = Sprite("flag", ["aaaaaa", "bbbbbb", "cccccc", "dddddd"])
+        self.assertEqual(found(flag), [])
+
+    def test_one_colour_more_than_the_size_allows_is_flagged(self):
+        flag = Sprite("flag", ["aaaaaa", "bbbbbb", "cccccc", "ddddee"])
+        self.assert_flagged("uses 5 colours, 4 allowed for 24 painted pixels", flag)
+
+    def test_the_finding_has_no_points(self):
+        flag = Sprite("flag", ["aaaaaa", "bbbbbb", "cccccc", "ddddee"])
+        self.assertEqual(found(flag)[0].points, ())
+
+    def test_a_part_of_a_share_of_pixels_allows_a_whole_colour(self):
+        quilt = Sprite("quilt", ["aaaaa", "bbbbb", "ccccc", "ddddd", "eeeee"])
+        self.assertEqual(found(quilt), [])
+        quilt = Sprite("quilt", ["aaaaa", "bbbbb", "ccccc", "ddddd", "eeeff"])
+        self.assert_flagged("uses 6 colours, 5 allowed for 25 painted pixels", quilt)
+
+    def test_only_painted_cells_count_towards_the_size(self):
+        steps = Sprite("steps", ["aaaaaa", "bbbbbb", "ccc...", "ddd..."])
+        self.assert_flagged("uses 4 colours, 3 allowed for 18 painted pixels", steps)
+
+    def test_three_colours_are_allowed_however_small_the_sprite(self):
+        chip = Sprite("chip", ["aabbcc"])
+        self.assertEqual(found(chip), [])
+        chip = Sprite("chip", ["aabbccdd"])
+        self.assert_flagged("uses 4 colours, 3 allowed for 8 painted pixels", chip)
+
+    def test_max_colours_takes_the_place_of_the_size_rule(self):
+        flag = Sprite("flag", ["aaaaaa", "bbbbbb", "cccccc", "dddddd"])
+        self.assert_flagged("uses 4 colours, 3 allowed for 24 painted pixels", flag, max_colours=3)
+        chip = Sprite("chip", ["aabbccdd"])
+        self.assertEqual(found(chip, max_colours=4), [])
+
+    def test_max_colours_may_be_fewer_than_three(self):
+        chip = Sprite("chip", ["aabbcc"])
+        self.assert_flagged("uses 3 colours, 2 allowed for 6 painted pixels", chip, max_colours=2)
+
+    def test_pixels_per_colour_sets_how_many_pixels_allow_a_colour(self):
+        flag = Sprite("flag", ["aaaaaa", "bbbbbb", "cccccc", "ddddee"])
+        self.assertEqual(found(flag, pixels_per_colour=5), [])
+        flag = Sprite("flag", ["aaaaaa", "bbbbbb", "cccccc", "dddddd"])
+        self.assert_flagged("uses 4 colours, 3 allowed for 24 painted pixels", flag, pixels_per_colour=8)
+
+    def test_nothing_painted_is_nothing_found(self):
+        self.assertEqual(found(Sprite("blank", ["..", ".."]), max_colours=0), [])
+
+    def test_findings_come_sprite_by_sprite_with_the_lone_pixels_first(self):
+        scrap = Sprite("scrap", ["aabb", "ccdx"])
+        chip = Sprite("chip", ["aabbcc"])
+        patch = Sprite("patch", ["aabb", "ccdd", "...x"])
+        self.assertEqual(
+            found(scrap, chip, patch),
+            [
+                Finding("lone_pixel", "scrap", "2 lone pixels", ((2, 1), (3, 1))),
+                Finding("colour_count", "scrap", "uses 5 colours, 3 allowed for 8 painted pixels"),
+                Finding("lone_pixel", "patch", "1 lone pixel", ((3, 2),)),
+                Finding("colour_count", "patch", "uses 5 colours, 3 allowed for 9 painted pixels"),
+            ],
+        )
+
+
 class RunTest(unittest.TestCase):
     def test_run_finds_the_rule_and_hands_it_the_options(self):
         spriteset = set_of(Sprite("gem", ["ooo", "oxo", "ooo"]))

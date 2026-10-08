@@ -1,6 +1,8 @@
 """Rules that look at one sprite's cells."""
 from __future__ import annotations
 
+import math
+
 from ..sprite import Sprite
 from ..spriteset import SpriteSet
 from . import Finding, Options
@@ -13,6 +15,7 @@ def check(spriteset: SpriteSet, options: Options) -> list[Finding]:
     found: list[Finding] = []
     for sprite in spriteset.sprites.values():
         found.extend(_lone_pixel(sprite, options))
+        found.extend(_colour_count(sprite, options))
     return found
 
 
@@ -27,3 +30,16 @@ def _lone_pixel(sprite: Sprite, options: Options) -> list[Finding]:
         return []
     message = "1 lone pixel" if len(lone) == 1 else f"{len(lone)} lone pixels"
     return [Finding("lone_pixel", sprite.name, message, lone)]
+
+
+def _colour_count(sprite: Sprite, options: Options) -> list[Finding]:
+    """One finding when the sprite uses more characters than it may."""
+    used = len(sprite.chars_used())
+    painted = sprite.painted()
+    allowed = options.max_colours
+    if allowed is None:
+        allowed = max(3, math.ceil(painted / options.pixels_per_colour))
+    if used <= allowed:
+        return []
+    message = f"uses {used} colours, {allowed} allowed for {painted} painted pixels"
+    return [Finding("colour_count", sprite.name, message)]
