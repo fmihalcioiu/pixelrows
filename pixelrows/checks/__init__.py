@@ -13,7 +13,7 @@ class Finding:
     """One thing a rule found."""
 
     rule: str  # the rule's name, such as 'lone_pixel'
-    target: str  # the sprite's name
+    target: str  # the sprite's name, or the anim's
     message: str
     points: tuple[tuple[int, int], ...] = ()  # the cells it is about, as (x, y), when it is about cells
 
@@ -35,6 +35,8 @@ class Options:
     lone_allow: frozenset[str] = frozenset()  # characters a lone pixel may be: eyes, glints
     max_colours: int | None = None  # colours a sprite may use; None works it out from its size
     pixels_per_colour: int = 6  # painted pixels that allow a sprite one colour, when its size sets the count
+    frame_slack: float = 0.15  # how far from its clip's mean a frame's painted count may be, as a share of the mean
+    feet_slack: int = 1  # how many rows the lowest painted row may move across a clip
 
 
 def run(spriteset: SpriteSet, options: Options | None = None) -> list[Finding]:
