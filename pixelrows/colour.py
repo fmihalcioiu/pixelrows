@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 
-from .palette import RGB, as_rgb
+from .palette import RGB, as_rgb, to_hex
 
 # Bjorn Ottosson's OKLab matrices, as published.
 _LINEAR_TO_LMS = (
@@ -29,6 +29,13 @@ _LMS_TO_LINEAR = (
 
 #: Below this chroma a colour is a grey and its hue is 0.
 _NO_CHROMA = 1e-7
+
+#: How far a linear channel may fall outside 0..1 and still count as in gamut.
+#: The smallest of 1e-6, 1e-5 and 1e-4 that keeps all eight corners of the sRGB cube in.
+_TOLERANCE = 1e-6
+
+#: How many times fit_chroma halves its range.
+_HALVINGS = 24
 
 
 def _times(matrix: tuple[tuple[float, float, float], ...], x: float, y: float, z: float) -> tuple[float, float, float]:
@@ -92,6 +99,32 @@ def oklch_to_oklab(l: float, c: float, h: float) -> tuple[float, float, float]:
     """Lightness, chroma and hue in degrees as OKLab (L, a, b)."""
     angle = math.radians(h)
     return l, c * math.cos(angle), c * math.sin(angle)
+
+
+def in_gamut(l: float, c: float, h: float) -> bool:
+    """Whether sRGB can show this colour."""
+    return all(-_TOLERANCE <= v <= 1 + _TOLERANCE for v in oklab_to_linear(oklch_to_oklab(l, c, h)))
+
+
+def fit_chroma(l: float, c: float, h: float) -> float:
+    """The largest chroma up to `c` that sRGB can show at this lightness and hue."""
+    if l <= 0 or l >= 1 or c <= 0:
+        return 0.0
+    if in_gamut(l, c, h):
+        return c
+    low, high = 0.0, c
+    for _ in range(_HALVINGS):
+        mid = (low + high) / 2
+        if in_gamut(l, mid, h):
+            low = mid
+        else:
+            high = mid
+    return low
+
+
+def oklch_to_hex(l: float, c: float, h: float) -> str:
+    """Lightness, chroma and hue as '#rrggbb', with the chroma brought into gamut first."""
+    return to_hex(oklab_to_srgb(oklch_to_oklab(l, fit_chroma(l, c, h), h)))
 
 
 def lightness(colour: str | RGB) -> float:

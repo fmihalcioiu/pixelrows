@@ -4,16 +4,31 @@ import unittest
 
 from pixelrows.colour import (
     difference,
+    fit_chroma,
+    in_gamut,
     lightness,
     oklab_to_linear,
     oklab_to_srgb,
+    oklch_to_hex,
     oklch_to_oklab,
     srgb_to_oklab,
     to_oklch,
 )
 from pixelrows.errors import PixelRowsError
+from pixelrows.palette import to_hex
 
 GRID = tuple(itertools.product((0, 51, 102, 153, 204, 255), repeat=3))
+CORNERS = tuple(itertools.product((0, 255), repeat=3))
+
+# Lightness, chroma and hue values the gamut tests run over.
+LIGHTNESSES = (0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95)
+CHROMAS = (0.0, 0.02, 0.08, 0.15, 0.25, 0.4)
+HUES = tuple(range(0, 360, 20))
+
+
+def excursion(l, c, h):
+    """How far the worst linear channel of this colour falls outside 0..1."""
+    return max(max(-v, v - 1, 0.0) for v in oklab_to_linear(oklch_to_oklab(l, c, h)))
 
 
 class SrgbToOklabTest(unittest.TestCase):
@@ -131,6 +146,128 @@ class OklchToOklabTest(unittest.TestCase):
 
     def test_no_chroma_is_on_the_grey_axis(self):
         self.assertLab(oklch_to_oklab(0.7, 0.0, 123), (0.7, 0.0, 0.0))
+
+
+class InGamutTest(unittest.TestCase):
+    def test_all_eight_corners_of_the_cube_are_in(self):
+        for rgb in CORNERS:
+            with self.subTest(rgb=rgb):
+                self.assertTrue(in_gamut(*to_oklch(rgb)))
+
+    def test_every_grid_colour_is_in(self):
+        for rgb in GRID:
+            with self.subTest(rgb=rgb):
+                self.assertTrue(in_gamut(*to_oklch(rgb)))
+
+    def chroma_with_excursion(self, l, h, target):
+        """The chroma at which the worst linear channel is `target` outside 0..1."""
+        low, high = 0.0, 0.4
+        for _ in range(50):
+            mid = (low + high) / 2
+            if excursion(l, mid, h) <= target:
+                low = mid
+            else:
+                high = mid
+        return low
+
+    def test_the_tolerance_is_the_smallest_that_holds_the_corners(self):
+        worst = max(excursion(*to_oklch(rgb)) for rgb in CORNERS)
+        smallest = next(t for t in (1e-6, 1e-5, 1e-4) if worst <= t)
+        self.assertEqual(smallest, 1e-6)
+        # A channel half that far out is let through, one twice that far out is not.
+        for l, h in ((0.6, 30), (0.5, 140), (0.4, 265), (0.85, 100)):
+            with self.subTest(l=l, h=h):
+                self.assertTrue(in_gamut(l, self.chroma_with_excursion(l, h, smallest / 2), h))
+                self.assertFalse(in_gamut(l, self.chroma_with_excursion(l, h, smallest * 2), h))
+
+    def test_too_much_chroma_is_out(self):
+        for h in HUES:
+            with self.subTest(h=h):
+                self.assertFalse(in_gamut(0.5, 0.4, h))
+
+    def test_lighter_than_white_and_darker_than_black_are_out(self):
+        self.assertFalse(in_gamut(1.1, 0.0, 0))
+        self.assertFalse(in_gamut(-0.1, 0.0, 0))
+
+    def test_greys_are_in(self):
+        for l in (0.0, 0.25, 0.5, 0.75, 1.0):
+            with self.subTest(l=l):
+                self.assertTrue(in_gamut(l, 0.0, 0))
+
+
+class FitChromaTest(unittest.TestCase):
+    def test_never_returns_a_chroma_out_of_gamut(self):
+        for l, c, h in itertools.product(LIGHTNESSES, CHROMAS, HUES):
+            with self.subTest(l=l, c=c, h=h):
+                fitted = fit_chroma(l, c, h)
+                self.assertTrue(in_gamut(l, fitted, h))
+                self.assertTrue(0 <= fitted <= c)
+
+    def test_returns_the_chroma_itself_when_it_is_in_gamut(self):
+        for l, c, h in itertools.product(LIGHTNESSES, CHROMAS, HUES):
+            if in_gamut(l, c, h):
+                with self.subTest(l=l, c=c, h=h):
+                    self.assertEqual(fit_chroma(l, c, h), c)
+
+    def test_comes_down_to_the_edge_of_the_gamut(self):
+        found = 0
+        for l, c, h in itertools.product(LIGHTNESSES, CHROMAS, HUES):
+            if in_gamut(l, c, h):
+                continue
+            found += 1
+            with self.subTest(l=l, c=c, h=h):
+                fitted = fit_chroma(l, c, h)
+                self.assertLess(fitted, c)
+                self.assertFalse(in_gamut(l, fitted + 1e-6, h))
+        self.assertGreater(found, 0)
+
+    def test_lightness_at_or_below_0_gives_0(self):
+        self.assertEqual(fit_chroma(0.0, 0.1, 40), 0.0)
+        self.assertEqual(fit_chroma(-0.2, 0.1, 40), 0.0)
+
+    def test_lightness_at_or_above_1_gives_0(self):
+        self.assertEqual(fit_chroma(1.0, 0.1, 40), 0.0)
+        self.assertEqual(fit_chroma(1.3, 0.1, 40), 0.0)
+
+    def test_no_chroma_asked_gives_0(self):
+        self.assertEqual(fit_chroma(0.5, 0.0, 40), 0.0)
+
+    def test_a_colour_keeps_its_own_chroma(self):
+        for rgb in GRID:
+            with self.subTest(rgb=rgb):
+                l, c, h = to_oklch(rgb)
+                if 0 < l < 1:
+                    self.assertEqual(fit_chroma(l, c, h), c)
+
+
+class OklchToHexTest(unittest.TestCase):
+    def test_a_colours_own_oklch_gives_the_colour_back(self):
+        for rgb in GRID:
+            with self.subTest(rgb=rgb):
+                self.assertEqual(oklch_to_hex(*to_oklch(rgb)), to_hex(rgb))
+
+    def test_other_colours_come_back_too(self):
+        for colour in ("#262c44", "#394c75", "#4773ab", "#739dc3", "#aac9de", "#1a1a22", "#e8b087", "#010101"):
+            with self.subTest(colour=colour):
+                self.assertEqual(oklch_to_hex(*to_oklch(colour)), colour)
+
+    def test_chroma_is_fitted_first(self):
+        l, c, h = 0.9, 0.30, 30
+        self.assertFalse(in_gamut(l, c, h))
+        fitted = fit_chroma(l, c, h)
+        self.assertEqual(oklch_to_hex(l, c, h), to_hex(oklab_to_srgb(oklch_to_oklab(l, fitted, h))))
+        # The fitted colour keeps the lightness and hue that were asked for.
+        got_l, _, got_h = to_oklch(oklch_to_hex(l, c, h))
+        self.assertAlmostEqual(got_l, l, delta=0.01)
+        self.assertAlmostEqual(got_h, h, delta=3)
+
+    def test_the_ends_of_lightness_are_black_and_white(self):
+        self.assertEqual(oklch_to_hex(0.0, 0.2, 100), "#000000")
+        self.assertEqual(oklch_to_hex(1.0, 0.2, 100), "#ffffff")
+
+    def test_is_lower_case_hex(self):
+        text = oklch_to_hex(0.7, 0.1, 50)
+        self.assertRegex(text, r"^#[0-9a-f]{6}$")
 
 
 class LightnessTest(unittest.TestCase):
