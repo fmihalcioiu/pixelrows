@@ -2,6 +2,7 @@ import unittest
 
 from pixelrows import checks
 from pixelrows.checks import Finding, Options, frames
+from pixelrows.errors import PixelRowsError
 from pixelrows.sprite import Sprite
 from pixelrows.spriteset import SpriteSet
 
@@ -11,6 +12,8 @@ BODY_23 = [".ooo.", "ooooo", "ooooo", "ooooo", "ooooo"]
 BODY_17 = [".ooo.", ".ooo.", ".ooo.", ".ooo.", "ooooo"]
 BODY_16 = [".ooo.", ".ooo.", ".ooo.", ".ooo.", "oooo."]
 BODY_11 = [".....", ".....", ".ooo.", ".ooo.", "ooooo"]
+BODY_2 = [".....", ".....", ".....", ".....", ".oo.."]
+BODY_1 = [".....", ".....", ".....", ".....", "..o.."]
 
 #: Frames named for the row of their lowest painted cell. Each has six cells painted.
 FEET_1 = ["ooo..", "ooo..", ".....", ".....", "....."]
@@ -69,6 +72,40 @@ class FramePixelsTest(unittest.TestCase):
     def test_frame_slack_sets_how_far_a_frame_may_be(self):
         self.assertEqual(len(found("frame_pixels", clip("puff", BODY_23, BODY_17), frame_slack=0.125)), 2)
         self.assertEqual(found("frame_pixels", clip("puff", BODY_24, BODY_16), frame_slack=0.25), [])
+
+    def test_frame_slack_of_0_flags_every_frame_that_is_not_at_the_mean(self):
+        self.assertEqual(found("frame_pixels", clip("puff", BODY_23, BODY_23), frame_slack=0), [])
+        self.assertEqual(
+            found("frame_pixels", clip("puff", BODY_24, BODY_23, BODY_23, BODY_23, BODY_17), frame_slack=0),
+            [
+                Finding("frame_pixels", "puff", "frame 0 ('puff_0') has 24 painted pixels, the clip's mean is 22.0"),
+                Finding("frame_pixels", "puff", "frame 1 ('puff_1') has 23 painted pixels, the clip's mean is 22.0"),
+                Finding("frame_pixels", "puff", "frame 2 ('puff_2') has 23 painted pixels, the clip's mean is 22.0"),
+                Finding("frame_pixels", "puff", "frame 3 ('puff_3') has 23 painted pixels, the clip's mean is 22.0"),
+                Finding("frame_pixels", "puff", "frame 4 ('puff_4') has 17 painted pixels, the clip's mean is 22.0"),
+            ],
+        )
+
+    def test_frame_slack_may_be_a_whole_number(self):
+        self.assertEqual(found("frame_pixels", clip("pop", BODY_24, BODY_24, BODY_24, BLANK), frame_slack=1), [])
+
+    def test_a_frame_slack_below_0_is_refused(self):
+        with self.assertRaises(PixelRowsError) as caught:
+            found("frame_pixels", clip("puff", BODY_23, BODY_23), frame_slack=-0.5)
+        self.assertEqual(str(caught.exception), "frame_slack must be a finite number of 0 or more, got -0.5")
+
+    def test_the_message_says_pixel_for_one_and_pixels_for_any_other_count(self):
+        blink = clip("blink", BODY_24, BODY_1, BLANK, BODY_2, BODY_23)
+        self.assertEqual(
+            found("frame_pixels", blink),
+            [
+                Finding("frame_pixels", "blink", "frame 0 ('blink_0') has 24 painted pixels, the clip's mean is 10.0"),
+                Finding("frame_pixels", "blink", "frame 1 ('blink_1') has 1 painted pixel, the clip's mean is 10.0"),
+                Finding("frame_pixels", "blink", "frame 2 ('blink_2') has 0 painted pixels, the clip's mean is 10.0"),
+                Finding("frame_pixels", "blink", "frame 3 ('blink_3') has 2 painted pixels, the clip's mean is 10.0"),
+                Finding("frame_pixels", "blink", "frame 4 ('blink_4') has 23 painted pixels, the clip's mean is 10.0"),
+            ],
+        )
 
     def test_each_place_in_the_clip_is_a_frame_named_by_its_sprite(self):
         spriteset = SpriteSet()
@@ -129,6 +166,25 @@ class FeetDriftTest(unittest.TestCase):
         self.assertEqual(found("feet_drift", clip("hop", FEET_4, FEET_1), feet_slack=3), [])
         self.assertEqual(len(found("feet_drift", clip("hop", FEET_4, FEET_1), feet_slack=2)), 1)
 
+    def test_feet_slack_of_0_flags_any_move_at_all(self):
+        self.assertEqual(found("feet_drift", clip("bob", FEET_4, FEET_4, BODY_23), feet_slack=0), [])
+        self.assertEqual(len(found("feet_drift", clip("bob", FEET_4, FEET_3), feet_slack=0)), 1)
+
+    def test_a_feet_slack_below_0_is_refused(self):
+        with self.assertRaises(PixelRowsError) as caught:
+            found("feet_drift", clip("bob", FEET_4, FEET_4), feet_slack=-1)
+        self.assertEqual(str(caught.exception), "feet_slack must be a whole number of 0 or more, got -1")
+
+    def test_the_message_says_row_for_a_move_of_one_and_rows_for_more(self):
+        self.assertEqual(
+            found("feet_drift", clip("bob", FEET_4, FEET_3), feet_slack=0),
+            [Finding("feet_drift", "bob", "the lowest painted row moves 1 row across the clip (rows 3 to 4)")],
+        )
+        self.assertEqual(
+            found("feet_drift", clip("bob", FEET_4, FEET_2), feet_slack=0),
+            [Finding("feet_drift", "bob", "the lowest painted row moves 2 rows across the clip (rows 2 to 4)")],
+        )
+
     def test_it_is_the_lowest_painted_row_that_counts_not_the_highest(self):
         self.assertEqual(found("feet_drift", clip("duck", BODY_23, FEET_4)), [])
 
@@ -157,13 +213,11 @@ class ClipsTest(unittest.TestCase):
         self.assertEqual(frames.check(spriteset, Options()), [])
 
     def test_a_clip_of_one_frame_is_skipped(self):
-        # With a slack below zero, every frame of a clip that is looked at is flagged.
-        strict = Options(frame_slack=-1.0, feet_slack=-1)
-        spriteset = SpriteSet()
-        spriteset.add(Sprite("still", FEET_4))
-        spriteset.add_anim("wait", ["still", "still"], 8)
+        # With no slack at all, two frames that differ are both flagged, and so is the move of their lowest row.
+        strict = Options(frame_slack=0, feet_slack=0)
+        spriteset = clip("wait", FEET_3, BODY_23)
         self.assertEqual(len(frames.check(spriteset, strict)), 3)
-        spriteset.add_anim("wait", ["still"], 8)
+        spriteset.add_anim("wait", ["wait_0"], 8)
         self.assertEqual(frames.check(spriteset, strict), [])
 
     def test_findings_come_anim_by_anim_with_the_frames_first(self):

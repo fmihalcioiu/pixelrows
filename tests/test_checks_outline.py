@@ -2,6 +2,7 @@ import unittest
 
 from pixelrows import checks
 from pixelrows.checks import Finding, Options, outline
+from pixelrows.errors import PixelRowsError
 from pixelrows.sprite import Sprite
 from pixelrows.spriteset import SpriteSet
 
@@ -26,6 +27,13 @@ class OutlineGapTest(unittest.TestCase):
     def test_edge_cells_that_are_not_the_outline_are_flagged(self):
         blob = Sprite("blob", ["..gg..", ".oggo.", "oggggo", "oooooo"])
         self.assert_flagged("2 of 12 edge pixels are not the outline 'o'", ((2, 0), (3, 0)), blob, outline="o")
+
+    def test_the_message_says_is_for_one_gap_and_are_for_more(self):
+        blob = Sprite("blob", ["..og..", ".oggo.", "oggggo", "oooooo"])
+        self.assert_flagged("1 of 12 edge pixels is not the outline 'o'", ((3, 0),), blob, outline="o")
+        blob = Sprite("blob", ["..gg..", ".oggo.", "oggggo", "ooogoo"])
+        points = ((2, 0), (3, 0), (3, 3))
+        self.assert_flagged("3 of 12 edge pixels are not the outline 'o'", points, blob, outline="o")
 
     def test_a_sprite_outlined_all_the_way_round_is_not_flagged(self):
         blob = Sprite("blob", ["..oo..", ".oggo.", "oggggo", "oooooo"])
@@ -82,6 +90,17 @@ class OutlineGapTest(unittest.TestCase):
     def test_nothing_painted_is_nothing_found(self):
         self.assertEqual(found(Sprite("blank", ["..", ".."]), outline="o"), [])
         self.assertEqual(found(outline="o"), [])
+
+    def test_an_outline_that_is_no_character_to_paint_with_is_refused(self):
+        crate = Sprite("crate", ["ogoo", "oggg", "oooo"])
+        for refused in ("", "og", " ", "."):
+            with self.subTest(outline=refused):
+                with self.assertRaises(PixelRowsError) as caught:
+                    found(crate, outline=refused)
+                self.assertEqual(
+                    str(caught.exception),
+                    f"outline must be one character that is not whitespace and not '.', got {refused!r}",
+                )
 
 
 class RunTest(unittest.TestCase):

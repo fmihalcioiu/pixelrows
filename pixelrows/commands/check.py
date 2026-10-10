@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 
 from .. import checks
-from ..errors import PixelRowsError
 from . import emit, load_set
 
 NAME = "check"
@@ -26,16 +25,15 @@ def run(args: argparse.Namespace) -> int:
     """
     Prints the set's problems and the findings of every rule.
 
-    Returns 1 when there is a problem or a finding, else 0.
+    Returns 1 when there is a problem or a finding, else 0. PixelRowsError for
+    an option the rules refuse, raised before the file is read.
     """
-    if args.outline is not None and len(args.outline) != 1:
-        raise PixelRowsError(f"--outline takes one character, got {args.outline!r}")
-    spriteset = load_set(args.file)
     options = checks.Options(
         outline=args.outline,
         lone_allow=frozenset(args.allow_lone),
         max_colours=args.max_colours,
     )
+    spriteset = load_set(args.file)
     problems = spriteset.problems()
     findings = [finding.to_dict() for finding in checks.run(spriteset, options)]
     emit({"problems": problems, "findings": findings})

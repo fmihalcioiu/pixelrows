@@ -163,7 +163,7 @@ class CheckCommandTest(unittest.TestCase):
         self.assertEqual(data["findings"], [{
             "rule": "outline_gap",
             "target": "open",
-            "message": "1 of 8 edge pixels are not the outline 'o'",
+            "message": "1 of 8 edge pixels is not the outline 'o'",
             "points": [[2, 1]],
         }])
         self.assertEqual(data["findings"], as_data(checks.run(open_set(), Options(outline="o"))))
@@ -224,7 +224,37 @@ class CheckCommandTest(unittest.TestCase):
                 code, out, err = run_main(["check", self.path, "--outline", outline])
                 self.assertEqual(code, 2)
                 self.assertEqual(out, "")
-                self.assertEqual(err, f"error: --outline takes one character, got {outline!r}\n")
+                self.assertEqual(
+                    err,
+                    f"error: outline must be one character that is not whitespace and not '.', got {outline!r}\n",
+                )
+
+    def test_an_outline_of_whitespace_or_a_dot_is_an_error(self):
+        open_set().save(self.path)
+        for outline in (" ", "\t", "."):
+            with self.subTest(outline=outline):
+                code, out, err = run_main(["check", self.path, "--outline", outline])
+                self.assertEqual(code, 2)
+                self.assertEqual(out, "")
+                self.assertEqual(
+                    err,
+                    f"error: outline must be one character that is not whitespace and not '.', got {outline!r}\n",
+                )
+
+    def test_a_max_colours_below_1_is_an_error(self):
+        clean_set().save(self.path)
+        for count in ("0", "-1", "-16"):
+            with self.subTest(count=count):
+                code, out, err = run_main(["check", self.path, "--max-colours", count])
+                self.assertEqual(code, 2)
+                self.assertEqual(out, "")
+                self.assertEqual(err, f"error: max_colours must be a whole number of 1 or more, got {count}\n")
+
+    def test_an_option_is_refused_before_the_file_is_read(self):
+        path = str(self.folder / "none.json")
+        code, out, err = run_main(["check", path, "--max-colours", "0"])
+        self.assertEqual((code, out), (2, ""))
+        self.assertEqual(err, "error: max_colours must be a whole number of 1 or more, got 0\n")
 
     def test_a_max_colours_that_is_not_a_whole_number_exits_with_2(self):
         clean_set().save(self.path)

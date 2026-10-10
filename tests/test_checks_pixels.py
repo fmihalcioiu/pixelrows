@@ -2,6 +2,7 @@ import unittest
 
 from pixelrows import checks
 from pixelrows.checks import Finding, Options, pixels
+from pixelrows.errors import PixelRowsError
 from pixelrows.sprite import Sprite
 from pixelrows.spriteset import SpriteSet
 
@@ -54,10 +55,131 @@ class FindingTest(unittest.TestCase):
 
 
 class OptionsTest(unittest.TestCase):
+    def assert_refused(self, message, **options):
+        with self.assertRaises(PixelRowsError) as caught:
+            Options(**options)
+        self.assertEqual(str(caught.exception), message)
+
     def test_cannot_be_changed(self):
         options = Options()
         with self.assertRaises(AttributeError):
             options.lone_allow = frozenset("e")
+
+    def test_what_is_not_given_has_its_default(self):
+        options = Options()
+        self.assertIsNone(options.outline)
+        self.assertEqual(options.lone_allow, frozenset())
+        self.assertIsNone(options.max_colours)
+        self.assertEqual(options.pixels_per_colour, 6)
+        self.assertEqual(options.frame_slack, 0.15)
+        self.assertEqual(options.feet_slack, 1)
+
+    def test_outline_may_be_none_or_any_one_character_that_paints(self):
+        for outline in (None, "o", "O", "#", "0", "_", "\u00e9"):
+            with self.subTest(outline=outline):
+                self.assertEqual(Options(outline=outline).outline, outline)
+
+    def test_outline_that_is_not_one_character_is_refused(self):
+        for outline in ("", "og", "ooo", 7, True, ["o"], ("o",)):
+            with self.subTest(outline=outline):
+                self.assert_refused(
+                    f"outline must be one character that is not whitespace and not '.', got {outline!r}",
+                    outline=outline,
+                )
+
+    def test_outline_of_whitespace_or_a_dot_is_refused(self):
+        for outline in (" ", "\t", "\n", "\u00a0", "."):
+            with self.subTest(outline=outline):
+                self.assert_refused(
+                    f"outline must be one character that is not whitespace and not '.', got {outline!r}",
+                    outline=outline,
+                )
+
+    def test_lone_allow_is_kept_as_a_frozenset_however_it_is_given(self):
+        given = ("eg", ["e", "g"], ("g", "e"), {"e", "g"}, frozenset("eg"), (ch for ch in "eg"), "egge")
+        for lone_allow in given:
+            with self.subTest(lone_allow=lone_allow):
+                kept = Options(lone_allow=lone_allow).lone_allow
+                self.assertIsInstance(kept, frozenset)
+                self.assertEqual(kept, frozenset({"e", "g"}))
+
+    def test_lone_allow_may_be_empty(self):
+        for lone_allow in ("", [], (), set(), frozenset()):
+            with self.subTest(lone_allow=lone_allow):
+                self.assertEqual(Options(lone_allow=lone_allow).lone_allow, frozenset())
+
+    def test_lone_allow_may_hold_any_single_character(self):
+        self.assertEqual(Options(lone_allow=". \u00e9").lone_allow, frozenset({".", " ", "\u00e9"}))
+
+    def test_lone_allow_that_is_not_single_characters_is_refused(self):
+        for lone_allow in (None, 7, True, ["eg"], ["e", ""], ["e", 7], [["e"]], b"eg"):
+            with self.subTest(lone_allow=lone_allow):
+                self.assert_refused(
+                    f"lone_allow must be a string or an iterable of single characters, got {lone_allow!r}",
+                    lone_allow=lone_allow,
+                )
+
+    def test_max_colours_may_be_none_or_a_whole_number_of_1_or_more(self):
+        for max_colours in (None, 1, 2, 16, 1000):
+            with self.subTest(max_colours=max_colours):
+                self.assertEqual(Options(max_colours=max_colours).max_colours, max_colours)
+
+    def test_max_colours_below_1_or_not_a_whole_number_is_refused(self):
+        for max_colours in (0, -1, -16, 1.5, 4.0, "4", True, False, [4]):
+            with self.subTest(max_colours=max_colours):
+                self.assert_refused(
+                    f"max_colours must be a whole number of 1 or more, got {max_colours!r}",
+                    max_colours=max_colours,
+                )
+
+    def test_pixels_per_colour_may_be_any_whole_number_of_1_or_more(self):
+        for pixels_per_colour in (1, 2, 6, 1000):
+            with self.subTest(pixels_per_colour=pixels_per_colour):
+                self.assertEqual(Options(pixels_per_colour=pixels_per_colour).pixels_per_colour, pixels_per_colour)
+
+    def test_pixels_per_colour_below_1_or_not_a_whole_number_is_refused(self):
+        for pixels_per_colour in (0, -1, -6, 0.5, 6.0, "6", None, True, False):
+            with self.subTest(pixels_per_colour=pixels_per_colour):
+                self.assert_refused(
+                    f"pixels_per_colour must be a whole number of 1 or more, got {pixels_per_colour!r}",
+                    pixels_per_colour=pixels_per_colour,
+                )
+
+    def test_frame_slack_may_be_any_finite_number_of_0_or_more(self):
+        for frame_slack in (0, 0.0, 0.15, 1, 2.5, 1000):
+            with self.subTest(frame_slack=frame_slack):
+                self.assertEqual(Options(frame_slack=frame_slack).frame_slack, frame_slack)
+
+    def test_frame_slack_below_0_or_not_a_finite_number_is_refused(self):
+        refused = (-0.01, -1, -1.0, float("nan"), float("inf"), float("-inf"), 10 ** 400, "0.15", None, True, False)
+        for frame_slack in refused:
+            with self.subTest(frame_slack=frame_slack):
+                self.assert_refused(
+                    f"frame_slack must be a finite number of 0 or more, got {frame_slack!r}",
+                    frame_slack=frame_slack,
+                )
+
+    def test_feet_slack_may_be_any_whole_number_of_0_or_more(self):
+        for feet_slack in (0, 1, 2, 1000):
+            with self.subTest(feet_slack=feet_slack):
+                self.assertEqual(Options(feet_slack=feet_slack).feet_slack, feet_slack)
+
+    def test_feet_slack_below_0_or_not_a_whole_number_is_refused(self):
+        for feet_slack in (-1, -5, 0.5, 1.0, "1", None, True, False):
+            with self.subTest(feet_slack=feet_slack):
+                self.assert_refused(
+                    f"feet_slack must be a whole number of 0 or more, got {feet_slack!r}",
+                    feet_slack=feet_slack,
+                )
+
+    def test_error_is_a_value_error(self):
+        with self.assertRaises(ValueError):
+            Options(pixels_per_colour=0)
+
+    def test_equal_when_every_option_matches_however_lone_allow_was_given(self):
+        self.assertEqual(Options(outline="o", lone_allow="eg"), Options(outline="o", lone_allow=["g", "e"]))
+        self.assertEqual(hash(Options(lone_allow="eg")), hash(Options(lone_allow=frozenset("ge"))))
+        self.assertNotEqual(Options(lone_allow="eg"), Options(lone_allow="e"))
 
 
 class LonePixelTest(unittest.TestCase):
@@ -102,6 +224,11 @@ class LonePixelTest(unittest.TestCase):
             found(face, lone_allow=frozenset("e")),
             [Finding("lone_pixel", "face", "1 lone pixel", ((3, 1),))],
         )
+
+    def test_lone_allow_may_be_given_as_a_string(self):
+        face = Sprite("face", ["ooooo", "oeoxo", "ooooo"])
+        self.assertEqual(found(face, lone_allow="ex"), [])
+        self.assertEqual(found(face, lone_allow="e"), [Finding("lone_pixel", "face", "1 lone pixel", ((3, 1),))])
 
     def test_one_finding_a_sprite_in_the_order_of_the_set(self):
         pair = Sprite("pair", ["x.x"])
@@ -162,14 +289,30 @@ class ColourCountTest(unittest.TestCase):
         chip = Sprite("chip", ["aabbcc"])
         self.assert_flagged("uses 3 colours, 2 allowed for 6 painted pixels", chip, max_colours=2)
 
+    def test_max_colours_of_1_allows_one_colour(self):
+        self.assertEqual(found(Sprite("bar", ["aaaa"]), max_colours=1), [])
+        self.assert_flagged("uses 2 colours, 1 allowed for 4 painted pixels", Sprite("bar", ["aabb"]), max_colours=1)
+
     def test_pixels_per_colour_sets_how_many_pixels_allow_a_colour(self):
         flag = Sprite("flag", ["aaaaaa", "bbbbbb", "cccccc", "ddddee"])
         self.assertEqual(found(flag, pixels_per_colour=5), [])
         flag = Sprite("flag", ["aaaaaa", "bbbbbb", "cccccc", "dddddd"])
         self.assert_flagged("uses 4 colours, 3 allowed for 24 painted pixels", flag, pixels_per_colour=8)
 
+    def test_pixels_per_colour_of_1_allows_a_colour_for_every_pixel(self):
+        chip = Sprite("chip", ["abcd", "efgh"])
+        self.assertEqual(found(chip, pixels_per_colour=1, lone_allow="abcdefgh"), [])
+        self.assert_flagged(
+            "uses 8 colours, 4 allowed for 8 painted pixels", chip, pixels_per_colour=2, lone_allow="abcdefgh"
+        )
+
+    def test_pixels_per_colour_of_0_is_refused_before_anything_is_divided(self):
+        with self.assertRaises(PixelRowsError) as caught:
+            found(Sprite("chip", ["aabbcc"]), pixels_per_colour=0)
+        self.assertEqual(str(caught.exception), "pixels_per_colour must be a whole number of 1 or more, got 0")
+
     def test_nothing_painted_is_nothing_found(self):
-        self.assertEqual(found(Sprite("blank", ["..", ".."]), max_colours=0), [])
+        self.assertEqual(found(Sprite("blank", ["..", ".."]), max_colours=1), [])
 
     def test_findings_come_sprite_by_sprite_with_the_lone_pixels_first(self):
         scrap = Sprite("scrap", ["aabb", "ccdx"])

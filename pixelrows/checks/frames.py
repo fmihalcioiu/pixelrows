@@ -34,7 +34,8 @@ def _frame_pixels(anim: Anim, frames: list[Sprite], options: Options) -> list[Fi
     found: list[Finding] = []
     for index, (name, count) in enumerate(zip(anim.frames, counts)):
         if abs(count - mean) > options.frame_slack * mean:
-            message = f"frame {index} ({name!r}) has {count} painted pixels, the clip's mean is {mean:.1f}"
+            pixels = "pixel" if count == 1 else "pixels"
+            message = f"frame {index} ({name!r}) has {count} painted {pixels}, the clip's mean is {mean:.1f}"
             found.append(Finding("frame_pixels", anim.name, message))
     return found
 
@@ -47,5 +48,6 @@ def _feet_drift(anim: Anim, frames: list[Sprite], options: Options) -> list[Find
     top, bottom = min(feet), max(feet)
     if bottom - top <= options.feet_slack:
         return []
-    message = f"the lowest painted row moves {bottom - top} rows across the clip (rows {top} to {bottom})"
+    rows = "row" if bottom - top == 1 else "rows"
+    message = f"the lowest painted row moves {bottom - top} {rows} across the clip (rows {top} to {bottom})"
     return [Finding("feet_drift", anim.name, message)]

@@ -36,5 +36,6 @@ def _outline_gap(sprite: Sprite, options: Options) -> list[Finding]:
     gaps = tuple((x, y) for x, y, ch in edge if ch != outline)
     if not gaps:
         return []
-    message = f"{len(gaps)} of {len(edge)} edge pixels are not the outline {outline!r}"
+    verb = "is" if len(gaps) == 1 else "are"
+    message = f"{len(gaps)} of {len(edge)} edge pixels {verb} not the outline {outline!r}"
     return [Finding("outline_gap", sprite.name, message, gaps)]
