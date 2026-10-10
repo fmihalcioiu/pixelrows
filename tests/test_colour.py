@@ -25,6 +25,9 @@ LIGHTNESSES = (0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95)
 CHROMAS = (0.0, 0.02, 0.08, 0.15, 0.25, 0.4)
 HUES = tuple(range(0, 360, 20))
 
+# What is not a finite number.
+NOT_FINITE = (float("nan"), float("inf"), float("-inf"), 10 ** 400, "0.5", None, True, False)
+
 
 def excursion(l, c, h):
     """How far the worst linear channel of this colour falls outside 0..1."""
@@ -93,6 +96,14 @@ class OklabToLinearTest(unittest.TestCase):
         linear = oklab_to_linear(oklch_to_oklab(0.5, 0.4, 0))
         self.assertTrue(min(linear) < 0 or max(linear) > 1)
 
+    def test_numbers_too_large_to_work_out_are_refused(self):
+        with self.assertRaises(PixelRowsError) as caught:
+            oklab_to_linear((1e200, 0.0, 0.0))
+        self.assertEqual(str(caught.exception), "OKLab (1e+200, 0.0, 0.0) is too large to work out as sRGB")
+        with self.assertRaises(PixelRowsError) as caught:
+            oklab_to_srgb([0.5, -1e150, 0.0])
+        self.assertEqual(str(caught.exception), "OKLab (0.5, -1e+150, 0.0) is too large to work out as sRGB")
+
 
 class ToOklchTest(unittest.TestCase):
     def test_takes_either_form(self):
@@ -147,6 +158,22 @@ class OklchToOklabTest(unittest.TestCase):
     def test_no_chroma_is_on_the_grey_axis(self):
         self.assertLab(oklch_to_oklab(0.7, 0.0, 123), (0.7, 0.0, 0.0))
 
+    def test_a_lightness_a_chroma_or_a_hue_that_is_not_a_finite_number_is_refused(self):
+        for index, name in enumerate(("lightness", "chroma", "hue")):
+            for bad in NOT_FINITE:
+                with self.subTest(argument=name, bad=bad):
+                    arguments = [0.5, 0.1, 30]
+                    arguments[index] = bad
+                    with self.assertRaises(PixelRowsError) as caught:
+                        oklch_to_oklab(*arguments)
+                    self.assertEqual(str(caught.exception), f"{name} must be a finite number, got {bad!r}")
+
+    def test_any_finite_number_is_taken(self):
+        self.assertLab(oklch_to_oklab(1, 0, 0), (1.0, 0.0, 0.0))
+        self.assertLab(oklch_to_oklab(-0.5, 0.1, 720), (-0.5, 0.1, 0.0))
+        self.assertLab(oklch_to_oklab(1.5, 0.1, -90), (1.5, 0.0, -0.1))
+        self.assertEqual(oklch_to_oklab(1e300, 0.0, 1e300)[0], 1e300)
+
 
 class InGamutTest(unittest.TestCase):
     def test_all_eight_corners_of_the_cube_are_in(self):
@@ -194,6 +221,28 @@ class InGamutTest(unittest.TestCase):
             with self.subTest(l=l):
                 self.assertTrue(in_gamut(l, 0.0, 0))
 
+    def test_what_is_not_a_finite_number_is_refused(self):
+        for index, name in enumerate(("lightness", "chroma", "hue")):
+            for bad in NOT_FINITE:
+                with self.subTest(argument=name, bad=bad):
+                    arguments = [0.5, 0.1, 30]
+                    arguments[index] = bad
+                    with self.assertRaises(PixelRowsError) as caught:
+                        in_gamut(*arguments)
+                    self.assertEqual(str(caught.exception), f"{name} must be a finite number, got {bad!r}")
+
+    def test_numbers_too_large_to_work_out_are_refused(self):
+        for l, c in ((0.5, 1e200), (0.5, 1e103), (1e200, 0.0), (-1e200, 0.0)):
+            with self.subTest(l=l, c=c):
+                with self.assertRaises(PixelRowsError) as caught:
+                    in_gamut(l, c, 30)
+                self.assertIn("is too large to work out as sRGB", str(caught.exception))
+
+    def test_a_large_number_that_can_be_worked_out_is_only_out(self):
+        self.assertFalse(in_gamut(0.5, 1e100, 30))
+        self.assertFalse(in_gamut(1e100, 0.0, 30))
+        self.assertTrue(in_gamut(0.5, 0.05, 1e300))
+
 
 class FitChromaTest(unittest.TestCase):
     def test_never_returns_a_chroma_out_of_gamut(self):
@@ -239,6 +288,14 @@ class FitChromaTest(unittest.TestCase):
                 if 0 < l < 1:
                     self.assertEqual(fit_chroma(l, c, h), c)
 
+    def test_what_cannot_be_worked_out_is_refused(self):
+        nan, inf = float("nan"), float("inf")
+        refused = ((nan, 0.1, 30), (0.5, nan, 30), (0.5, inf, 30), (0.5, 1e200, 30), (0.5, 0.1, nan), (0.5, 0.1, inf))
+        for l, c, h in refused:
+            with self.subTest(l=l, c=c, h=h):
+                with self.assertRaises(PixelRowsError):
+                    fit_chroma(l, c, h)
+
 
 class OklchToHexTest(unittest.TestCase):
     def test_a_colours_own_oklch_gives_the_colour_back(self):
@@ -268,6 +325,22 @@ class OklchToHexTest(unittest.TestCase):
     def test_is_lower_case_hex(self):
         text = oklch_to_hex(0.7, 0.1, 50)
         self.assertRegex(text, r"^#[0-9a-f]{6}$")
+
+    def test_what_cannot_be_worked_out_is_refused(self):
+        nan, inf = float("nan"), float("inf")
+        refused = (
+            (nan, 0.1, 30), (inf, 0.1, 30), (-inf, 0.1, 30), (1e200, 0.1, 30), (-1e200, 0.1, 30),
+            (0.5, nan, 30), (0.5, inf, 30), (0.5, 1e200, 30),
+            (0.5, 0.1, nan), (0.5, 0.1, inf), (0.0, 0.1, nan), (1.0, 0.1, inf),
+        )
+        for l, c, h in refused:
+            with self.subTest(l=l, c=c, h=h):
+                with self.assertRaises(PixelRowsError):
+                    oklch_to_hex(l, c, h)
+
+    def test_a_hue_of_any_finite_size_is_an_angle(self):
+        self.assertEqual(oklch_to_hex(0.6, 0.1, 30 + 360 * 5), oklch_to_hex(0.6, 0.1, 30))
+        self.assertRegex(oklch_to_hex(0.6, 0.1, 1e300), r"^#[0-9a-f]{6}$")
 
 
 class LightnessTest(unittest.TestCase):

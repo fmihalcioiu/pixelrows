@@ -68,7 +68,7 @@ class RampStepsTest(unittest.TestCase):
 
     def test_the_default_ends_are_those_of_even_lightness(self):
         steps = printed(BLUE)["steps"]
-        self.assertEqual([step["lightness"] for step in steps], even_lightness(5))
+        self.assertEqual([step["lightness"] for step in steps], [round(value, 4) for value in even_lightness(5)])
         self.assertEqual(steps[0]["lightness"], 0.30)
         self.assertEqual(steps[-1]["lightness"], 0.82)
 
@@ -89,7 +89,7 @@ class RampStepsTest(unittest.TestCase):
 
     def test_darkest_and_lightest_set_the_two_ends(self):
         steps = printed(BLUE + ["--darkest", "0.2", "--lightest", "0.9", "--steps", "3"])["steps"]
-        self.assertEqual([step["lightness"] for step in steps], even_lightness(3, 0.2, 0.9))
+        self.assertEqual([step["lightness"] for step in steps], [0.2, 0.55, 0.9])
         self.assertEqual(steps[0]["lightness"], 0.2)
         self.assertEqual(steps[-1]["lightness"], 0.9)
 
@@ -118,6 +118,21 @@ class RampStepsTest(unittest.TestCase):
         self.assertIs(step["clipped"], True)
         self.assertEqual(step["asked_chroma"], 0.30)
         self.assertLess(step["chroma"], 0.30)
+
+    def test_numbers_are_printed_rounded_the_hue_to_2_places_and_the_others_to_4(self):
+        argv = ["ramp", "--hue", "30", "--chroma", "0.12", "--steps", "4", "--darkest", "0.25",
+                "--lightest", "0.9", "--hue-shift", "6.4", "--taper", "0.3"]
+        code, out, err = run_main(argv)
+        self.assertEqual((code, err), (0, ""))
+        self.assertNotRegex(out, r"\.\d{5}")
+        steps = json.loads(out)["steps"]
+        exact = ramp(30, 0.12, even_lightness(4, 0.25, 0.9), hue_shift=6.4, taper=0.3)
+        self.assertEqual([step["lightness"] for step in steps], [0.25, 0.4667, 0.6833, 0.9])
+        self.assertEqual([step["asked_chroma"] for step in steps], [0.084, 0.108, 0.108, 0.084])
+        self.assertEqual([step["hue"] for step in steps], [39.6, 33.2, 26.8, 20.4])
+        self.assertEqual([step["chroma"] for step in steps], [round(step.chroma, 4) for step in exact])
+        self.assertEqual([step["hex"] for step in steps], [step.hex for step in exact])
+        self.assertNotEqual(exact[0].asked_chroma, 0.084)
 
 
 class RampPaletteTest(unittest.TestCase):
@@ -232,6 +247,34 @@ class RampErrorsTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(out, "")
         self.assertEqual(err, "error: ramp: chroma is -0.1, it cannot be negative\n")
+
+    def test_a_chroma_above_1_is_an_error(self):
+        for chroma in ("1.5", "1e200"):
+            with self.subTest(chroma=chroma):
+                code, out, err = run_main(["ramp", "--hue", "30", "--chroma", chroma])
+                self.assertEqual(code, 2)
+                self.assertEqual(out, "")
+                self.assertEqual(err, f"error: ramp: chroma is {float(chroma)!r}, it cannot be above 1\n")
+
+    def test_a_number_that_is_not_finite_is_an_error_and_is_never_printed(self):
+        options = (("--hue", "hue"), ("--chroma", "chroma"), ("--hue-shift", "hue_shift"), ("--taper", "taper"))
+        for option, what in options:
+            for text in ("nan", "inf", "-inf"):
+                with self.subTest(option=option, text=text):
+                    argv = ["ramp", "--hue", "255", "--chroma", "0.1", f"{option}={text}"]
+                    code, out, err = run_main(argv)
+                    self.assertEqual(code, 2)
+                    self.assertEqual(out, "")
+                    self.assertEqual(err, f"error: ramp: {what} is {float(text)!r}, not a finite number\n")
+
+    def test_an_end_of_the_lightness_that_is_not_finite_is_an_error(self):
+        for option in ("--darkest", "--lightest"):
+            for text in ("nan", "inf", "-inf"):
+                with self.subTest(option=option, text=text):
+                    code, out, err = run_main(BLUE + [f"{option}={text}"])
+                    self.assertEqual(code, 2)
+                    self.assertEqual(out, "")
+                    self.assertRegex(err, r"^error: ramp: lightness \d is (nan|inf|-inf), not a finite number\n$")
 
     def test_without_a_hue_or_a_chroma_it_exits_with_2(self):
         for argv, missing in ((["ramp", "--chroma", "0.1"], "--hue"), (["ramp", "--hue", "255"], "--chroma")):

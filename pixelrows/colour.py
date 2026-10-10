@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 
+from .errors import PixelRowsError
 from .palette import RGB, as_rgb, to_hex
 
 # Bjorn Ottosson's OKLab matrices, as published.
@@ -67,6 +68,17 @@ def _wrap(degrees: float) -> float:
     return 0.0 if h >= 360.0 else h
 
 
+def _finite(what: str, value: float) -> float:
+    """`value` if it is a finite number: an int or a float, and not a bool, nan or an infinity."""
+    if not isinstance(value, bool) and isinstance(value, (int, float)):
+        try:
+            if math.isfinite(value):
+                return value
+        except OverflowError:
+            pass
+    raise PixelRowsError(f"{what} must be a finite number, got {value!r}")
+
+
 def srgb_to_oklab(rgb: RGB) -> tuple[float, float, float]:
     """An sRGB colour as OKLab (L, a, b)."""
     r, g, b = as_rgb(rgb)
@@ -75,9 +87,16 @@ def srgb_to_oklab(rgb: RGB) -> tuple[float, float, float]:
 
 
 def oklab_to_linear(lab: tuple[float, float, float]) -> tuple[float, float, float]:
-    """OKLab as linear sRGB. A channel falls outside 0..1 when sRGB cannot show the colour."""
+    """
+    OKLab as linear sRGB. A channel falls outside 0..1 when sRGB cannot show the colour.
+
+    PixelRowsError when the numbers are too large to work out.
+    """
     l, m, s = _times(_LAB_TO_LMS, lab[0], lab[1], lab[2])
-    return _times(_LMS_TO_LINEAR, l ** 3, m ** 3, s ** 3)
+    try:
+        return _times(_LMS_TO_LINEAR, l ** 3, m ** 3, s ** 3)
+    except OverflowError:
+        raise PixelRowsError(f"OKLab {tuple(lab)!r} is too large to work out as sRGB") from None
 
 
 def oklab_to_srgb(lab: tuple[float, float, float]) -> RGB:
@@ -96,8 +115,10 @@ def to_oklch(colour: str | RGB) -> tuple[float, float, float]:
 
 
 def oklch_to_oklab(l: float, c: float, h: float) -> tuple[float, float, float]:
-    """Lightness, chroma and hue in degrees as OKLab (L, a, b)."""
-    angle = math.radians(h)
+    """Lightness, chroma and hue in degrees as OKLab (L, a, b). PixelRowsError unless each is a finite number."""
+    _finite("lightness", l)
+    _finite("chroma", c)
+    angle = math.radians(_finite("hue", h))
     return l, c * math.cos(angle), c * math.sin(angle)
 
 

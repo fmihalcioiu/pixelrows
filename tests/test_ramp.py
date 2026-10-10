@@ -1,4 +1,5 @@
 import dataclasses
+import math
 import unittest
 
 from pixelrows.colour import in_gamut, oklch_to_hex, to_oklch
@@ -75,6 +76,59 @@ class StepTest(unittest.TestCase):
     def test_cannot_be_changed(self):
         with self.assertRaises(dataclasses.FrozenInstanceError):
             self.step.chroma = 0.2
+
+    def test_to_dict_rounds_lightness_and_both_chromas_to_4_places(self):
+        step = Step(
+            lightness=0.42999999999999994,
+            chroma=0.07887072372436524,
+            hue=39.75,
+            hex="#6b3a21",
+            asked_chroma=0.08399999999999999,
+            clipped=True,
+        )
+        self.assertEqual(step.to_dict(), {
+            "lightness": 0.43,
+            "chroma": 0.0789,
+            "hue": 39.75,
+            "hex": "#6b3a21",
+            "asked_chroma": 0.084,
+            "clipped": True,
+        })
+
+    def test_to_dict_rounds_the_hue_to_2_places(self):
+        rounded = ((264.00000000000006, 264.0), (33.333333333333336, 33.33), (12.345678, 12.35), (0.004, 0.0))
+        for hue, printed in rounded:
+            with self.subTest(hue=hue):
+                step = dataclasses.replace(self.step, hue=hue)
+                self.assertEqual(step.to_dict()["hue"], printed)
+
+    def test_to_dict_keeps_a_hue_that_rounds_up_to_360_below_360(self):
+        step = dataclasses.replace(self.step, hue=359.999)
+        self.assertEqual(step.to_dict()["hue"], 0.0)
+        self.assertEqual(dataclasses.replace(self.step, hue=359.99).to_dict()["hue"], 359.99)
+
+    def test_to_dict_leaves_the_fields_exact(self):
+        step = Step(
+            lightness=0.42999999999999994,
+            chroma=0.07887072372436524,
+            hue=264.00000000000006,
+            hex="#394c75",
+            asked_chroma=0.08399999999999999,
+            clipped=True,
+        )
+        step.to_dict()
+        self.assertEqual(step.lightness, 0.42999999999999994)
+        self.assertEqual(step.chroma, 0.07887072372436524)
+        self.assertEqual(step.hue, 264.00000000000006)
+        self.assertEqual(step.asked_chroma, 0.08399999999999999)
+
+    def test_to_dict_of_a_ramp_has_no_number_longer_than_its_places(self):
+        for step in ramp(30, 0.12, even_lightness(4, 0.25, 0.9), hue_shift=6.4, taper=0.3):
+            data = step.to_dict()
+            for key, places in (("lightness", 4), ("chroma", 4), ("asked_chroma", 4), ("hue", 2)):
+                with self.subTest(key=key, value=data[key]):
+                    self.assertEqual(data[key], round(getattr(step, key), places))
+                    self.assertLessEqual(len(repr(data[key]).partition(".")[2]), places)
 
 
 class WorkedRampTest(unittest.TestCase):
@@ -252,6 +306,85 @@ class RampErrorTest(unittest.TestCase):
     def test_the_ends_of_each_range_are_allowed(self):
         self.assertEqual(len(ramp(255, 0, [0, 1], taper=0)), 2)
         self.assertEqual(len(ramp(255, 0.1, [0.0, 1.0], taper=1)), 2)
+
+    def test_a_chroma_above_1(self):
+        for bad in (1.0001, 2, 1e200):
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError) as caught:
+                    ramp(30, bad)
+                self.assertEqual(str(caught.exception), f"ramp: chroma is {bad!r}, it cannot be above 1")
+
+    def test_a_chroma_of_1_is_allowed_and_comes_back_clipped(self):
+        (step,) = ramp(30, 1, [0.5])
+        self.assertEqual(step.asked_chroma, 1.0)
+        self.assertTrue(step.clipped)
+        self.assertTrue(in_gamut(step.lightness, step.chroma, step.hue))
+
+    def test_a_hue_a_chroma_a_hue_shift_or_a_taper_that_is_not_a_finite_number(self):
+        refused = (float("nan"), float("inf"), float("-inf"), 10 ** 400, "0.1", None, True, False, [0.1])
+        for name in ("hue", "chroma", "hue_shift", "taper"):
+            for bad in refused:
+                with self.subTest(argument=name, bad=bad):
+                    arguments = {"hue": 255, "chroma": 0.1, "hue_shift": 0.0, "taper": 0.0, name: bad}
+                    with self.assertRaises(PixelRowsError) as caught:
+                        ramp(**arguments)
+                    self.assertEqual(str(caught.exception), f"ramp: {name} is {bad!r}, not a finite number")
+
+    def test_a_lightness_value_that_is_not_a_finite_number(self):
+        for bad in (float("nan"), float("inf"), float("-inf"), 10 ** 400, "0.5", None, True, False):
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError) as caught:
+                    ramp(255, 0.1, [0.3, bad, 0.8])
+                self.assertEqual(str(caught.exception), f"ramp: lightness 1 is {bad!r}, not a finite number")
+
+    def test_a_lightness_that_is_not_a_list_or_a_tuple(self):
+        for bad in (0.5, 1, "0.5", {0.5}, {0.3: 0.8}, range(1), iter([0.3, 0.8])):
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError) as caught:
+                    ramp(255, 0.1, bad)
+                self.assertEqual(str(caught.exception), f"ramp: lightness is {bad!r}, not a list or a tuple")
+
+    def test_a_lightness_may_be_a_list_or_a_tuple(self):
+        self.assertEqual(ramp(255, 0.1, (0.3, 0.55, 0.8)), ramp(255, 0.1, [0.3, 0.55, 0.8]))
+
+    def test_whole_numbers_are_taken_as_numbers(self):
+        steps = ramp(255, 0, [0, 1], hue_shift=9, taper=1)
+        self.assertEqual([step.hex for step in steps], ["#000000", "#ffffff"])
+        self.assertEqual([step.lightness for step in steps], [0.0, 1.0])
+
+    def test_a_hue_of_any_finite_size_is_wrapped(self):
+        for hue in (-1e300, -725, 725, 1e300, 10 ** 300):
+            with self.subTest(hue=hue):
+                for step in ramp(hue, 0.05, [0.3, 0.5, 0.7], hue_shift=1e6):
+                    self.assertTrue(0 <= step.hue < 360)
+
+    def test_a_hue_and_a_hue_shift_too_large_to_work_out(self):
+        with self.assertRaises(PixelRowsError) as caught:
+            ramp(1e308, 0.1, hue_shift=1e308)
+        self.assertEqual(
+            str(caught.exception), "ramp: hue 1e+308 turned by hue_shift 1e+308 is too large to work out"
+        )
+
+    def test_arguments_are_refused_with_a_value_error_and_no_other(self):
+        calls = (
+            lambda: ramp(float("nan"), 0.1),
+            lambda: ramp(30, 1e200),
+            lambda: ramp(255, 0.1, 0.5),
+            lambda: ramp(255, 0.1, ["0.5"]),
+            lambda: ramp(255, 0.1, taper="1"),
+        )
+        for index, call in enumerate(calls):
+            with self.subTest(call=index):
+                with self.assertRaises(ValueError) as caught:
+                    call()
+                self.assertIsInstance(caught.exception, PixelRowsError)
+
+    def test_no_step_has_a_number_that_is_not_finite(self):
+        for hue, shift in ((-1e300, 1e300), (1e300, 0), (0, -1e306), (359.999, 1e-300)):
+            for step in ramp(hue, 1, [0, 0.001, 0.5, 0.999, 1], hue_shift=shift, taper=1):
+                with self.subTest(hue=hue, shift=shift, lightness=step.lightness):
+                    for value in (step.lightness, step.chroma, step.hue, step.asked_chroma):
+                        self.assertTrue(math.isfinite(value))
 
 
 if __name__ == "__main__":
