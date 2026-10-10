@@ -155,6 +155,18 @@ save_gif("out/slime_idle.gif", sprites, "slime_idle", scale=8)
 
 Everything is drawn into an `Image`, a plain RGBA buffer, before a file is written. A window or another program can show the same pixels without going through a file.
 
+## A skill for Claude
+
+`skills/pixelrows` is a skill that teaches Claude to draw with this package: write the rows, run the checks, render a sheet, look at it, and fix what reads badly.
+
+For Claude Code, copy the folder into your skills folder, or into `.claude/skills/` of one project:
+
+```
+cp -r skills/pixelrows ~/.claude/skills/
+```
+
+The skill calls `python -m pixelrows`, so the package has to be installed where Claude runs, or Claude has to work from a clone of this repo.
+
 ## Tests
 
 ```
