@@ -27,11 +27,10 @@ def parse_hex(text: str) -> RGB:
 
 
 def to_hex(rgb: RGB) -> str:
-    """(r, g, b) as '#rrggbb', in lower case."""
-    try:
-        r, g, b = (int(v) for v in rgb)
-    except (TypeError, ValueError):
-        raise PixelRowsError(f"not a colour: {rgb!r} (expected three numbers)") from None
+    """(r, g, b) as '#rrggbb', in lower case. The three are whole numbers from 0 to 255, in a list or a tuple."""
+    if not isinstance(rgb, (list, tuple)) or len(rgb) != 3 or not all(_is_whole(v) for v in rgb):
+        raise PixelRowsError(f"not a colour: {rgb!r} (expected a list or a tuple of three whole numbers)")
+    r, g, b = rgb
     if not all(0 <= v <= 255 for v in (r, g, b)):
         raise PixelRowsError(f"not a colour: {rgb!r} (each number is 0 to 255)")
     return f"#{r:02x}{g:02x}{b:02x}"
@@ -114,3 +113,8 @@ class Palette:
 
     def __repr__(self) -> str:
         return f"Palette({self._hex!r})"
+
+
+def _is_whole(value: object) -> bool:
+    """True for an int that is not a bool."""
+    return isinstance(value, int) and not isinstance(value, bool)

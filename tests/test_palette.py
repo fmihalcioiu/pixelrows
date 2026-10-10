@@ -3,6 +3,19 @@ import unittest
 from pixelrows.errors import PixelRowsError
 from pixelrows.palette import TRANSPARENT, Palette, as_rgb, parse_hex, to_hex
 
+#: What is not three whole numbers in a list or a tuple, one of each kind.
+NOT_NUMBERS = (
+    [1.9, 2.0, 3.5],
+    ["1", "2", "3"],
+    [True, False, True],
+    {1: 0, 2: 0, 3: 0},
+    {1, 2, 3},
+    (1, 2),
+    [1, 2, 3, 4],
+    (float("inf"), 0, 0),
+    [0, float("nan"), 0],
+)
+
 
 class ParseHexTest(unittest.TestCase):
     def test_six_digits(self):
@@ -35,11 +48,92 @@ class ToHexTest(unittest.TestCase):
     def test_round_trip(self):
         self.assertEqual(to_hex(parse_hex("#4773ab")), "#4773ab")
 
+    def test_takes_a_list_or_a_tuple_of_whole_numbers(self):
+        self.assertEqual(to_hex([255, 160, 0]), "#ffa000")
+        self.assertEqual(to_hex((255, 160, 0)), "#ffa000")
+        self.assertEqual(to_hex([0, 0, 0]), "#000000")
+        self.assertEqual(to_hex((255, 255, 255)), "#ffffff")
+
+    def assert_refused(self, *colours):
+        for bad in colours:
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError) as caught:
+                    to_hex(bad)
+                self.assertEqual(
+                    str(caught.exception),
+                    f"not a colour: {bad!r} (expected a list or a tuple of three whole numbers)",
+                )
+
+    def test_floats_are_refused(self):
+        self.assert_refused([1.9, 2.0, 3.5], (1.0, 2.0, 3.0), [1, 2, 3.0], (0.5, 2, 3))
+
+    def test_digit_strings_in_a_list_are_refused(self):
+        self.assert_refused(["1", "2", "3"], [1, "2", 3], ("ff", "a0", "00"))
+
+    def test_bools_are_refused(self):
+        self.assert_refused([True, False, True], (1, 2, True), [False, 0, 0])
+
+    def test_a_dict_is_refused(self):
+        self.assert_refused({1: 0, 2: 0, 3: 0}, {"r": 1, "g": 2, "b": 3})
+
+    def test_a_set_is_refused(self):
+        self.assert_refused({1, 2, 3}, frozenset((1, 2, 3)))
+
+    def test_a_string_is_refused(self):
+        self.assert_refused("123", "abc", "#102030")
+
+    def test_two_or_four_numbers_are_refused(self):
+        self.assert_refused((1, 2), [1, 2], (1, 2, 3, 4), [1, 2, 3, 255], [7], ())
+
+    def test_infinity_and_nan_are_refused(self):
+        self.assert_refused([float("inf"), 0, 0], (0, float("-inf"), 0), [0, 0, float("nan")])
+
+    def test_what_is_not_a_list_or_a_tuple_is_refused(self):
+        self.assert_refused(None, 7, 1.5, True, range(3), b"\x01\x02\x03", iter([1, 2, 3]))
+
+    def test_a_float_a_digit_string_and_a_bool_together_are_refused(self):
+        self.assert_refused([1.9, "2", True])
+
+    def test_number_out_of_range_says_the_range(self):
+        for bad in ((256, 0, 0), [0, -1, 0], (0, 0, 1000)):
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError) as caught:
+                    to_hex(bad)
+                self.assertEqual(str(caught.exception), f"not a colour: {bad!r} (each number is 0 to 255)")
+
 
 class AsRgbTest(unittest.TestCase):
     def test_takes_either_form(self):
         self.assertEqual(as_rgb("#102030"), (16, 32, 48))
         self.assertEqual(as_rgb((16, 32, 48)), (16, 32, 48))
+
+    def test_takes_a_list_or_a_tuple_of_whole_numbers(self):
+        self.assertEqual(as_rgb([16, 32, 48]), (16, 32, 48))
+        self.assertEqual(as_rgb((0, 255, 7)), (0, 255, 7))
+        self.assertIsInstance(as_rgb([16, 32, 48]), tuple)
+
+    def test_what_is_not_whole_numbers_is_refused(self):
+        for bad in NOT_NUMBERS:
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError) as caught:
+                    as_rgb(bad)
+                self.assertEqual(
+                    str(caught.exception),
+                    f"not a colour: {bad!r} (expected a list or a tuple of three whole numbers)",
+                )
+
+    def test_a_string_that_is_not_a_hex_colour_is_refused(self):
+        for bad in ("123", "abc", "1,2,3", "(1, 2, 3)"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError) as caught:
+                    as_rgb(bad)
+                self.assertEqual(str(caught.exception), f"not a colour: {bad!r} (expected '#rrggbb')")
+
+    def test_numbers_out_of_range_are_refused(self):
+        for bad in ((256, 0, 0), [0, -1, 0]):
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError):
+                    as_rgb(bad)
 
 
 class PaletteTest(unittest.TestCase):
@@ -104,6 +198,27 @@ class PaletteTest(unittest.TestCase):
     def test_set_changes_a_colour(self):
         self.palette.set("o", "#000")
         self.assertEqual(self.palette.hex("o"), "#000000")
+
+    def test_colour_may_be_a_list_or_a_tuple_of_whole_numbers(self):
+        palette = Palette({"a": [16, 32, 48], "b": (16, 32, 48)})
+        self.assertEqual(palette.to_dict(), {"a": "#102030", "b": "#102030"})
+        palette.set("a", [0, 0, 255])
+        self.assertEqual(palette.rgb("a"), (0, 0, 255))
+
+    def test_colour_that_is_not_whole_numbers_is_refused(self):
+        for bad in NOT_NUMBERS:
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError) as caught:
+                    Palette({"o": bad})
+                self.assertEqual(
+                    str(caught.exception),
+                    f"not a colour: {bad!r} (expected a list or a tuple of three whole numbers)",
+                )
+                with self.assertRaises(PixelRowsError):
+                    self.palette.set("o", bad)
+                with self.assertRaises(PixelRowsError):
+                    self.palette.merged({"o": bad})
+        self.assertEqual(self.palette.hex("o"), "#1a1a22")
 
 
 if __name__ == "__main__":
