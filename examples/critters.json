@@ -1,0 +1,105 @@
+{
+  "palette": {
+    "o": "#1b1b26",
+    "l": "#8ed97a",
+    "g": "#4fae5b",
+    "G": "#2f7d4a",
+    "w": "#f4f7ef",
+    "h": "#fff0a8",
+    "y": "#f2c230",
+    "Y": "#b9801c"
+  },
+  "sprites": {
+    "slime_0": {
+      "rows": [
+        "..............",
+        "..............",
+        "....oooooo....",
+        "...ollllggo...",
+        "..olwlgggggo..",
+        ".olllggggggGo.",
+        ".oggogggoggGo.",
+        "oggggggggggGGo",
+        "ogggggggggGGGo",
+        "oGGGGGGGGGGGGo",
+        ".oooooooooooo."
+      ]
+    },
+    "slime_1": {
+      "rows": [
+        "..............",
+        "..............",
+        "..............",
+        "...oooooooo...",
+        "..ollllggggo..",
+        ".olwllgggggGo.",
+        "oggogggggoggGo",
+        "oggggggggggGGo",
+        "ogggggggggGGGo",
+        "oGGGGGGGGGGGGo",
+        ".oooooooooooo."
+      ]
+    },
+    "slime_2": {
+      "rows": [
+        "..............",
+        ".....oooo.....",
+        "....ollllo....",
+        "...olwlgggo...",
+        "..ollgggggGo..",
+        "..oggogggoGo..",
+        "..oggggggGGo..",
+        ".ogggggggGGGo.",
+        ".ogggggggGGGo.",
+        ".oGGGGGGGGGGo.",
+        "..oooooooooo.."
+      ]
+    },
+    "coin_0": {
+      "rows": [
+        "...oooo...",
+        "..oyyyyo..",
+        ".oyhhyyYo.",
+        "oyhyyyyyYo",
+        "oyhyyyyyYo",
+        "oyyyyyyyYo",
+        "oyyyyyyYYo",
+        ".oyyyyYYo.",
+        "..oYYYYo..",
+        "...oooo..."
+      ]
+    },
+    "coin_1": {
+      "rows": [
+        "....oo....",
+        "...oyyo...",
+        "..oyhyYo..",
+        "..oyhyYo..",
+        "..oyhyYo..",
+        "..oyyyYo..",
+        "..oyyyYo..",
+        "..oyyYYo..",
+        "...oYYo...",
+        "....oo...."
+      ]
+    },
+    "coin_2": {
+      "rows": [
+        "....oo....",
+        "...oyYo...",
+        "...oyYo...",
+        "...oyYo...",
+        "...oyYo...",
+        "...oyYo...",
+        "...oyYo...",
+        "...oyYo...",
+        "...oyYo...",
+        "....oo...."
+      ]
+    }
+  },
+  "anims": {
+    "slime_idle": { "frames": ["slime_0", "slime_1", "slime_0", "slime_2"], "fps": 6 },
+    "coin_spin": { "frames": ["coin_0", "coin_1", "coin_2", "coin_1"], "fps": 8 }
+  }
+}

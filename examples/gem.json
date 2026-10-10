@@ -1,0 +1,24 @@
+{
+  "palette": {
+    "o": "#1b1b26",
+    "w": "#e9fbff",
+    "c": "#59c3e8",
+    "C": "#2a7fb8"
+  },
+  "sprites": {
+    "gem": {
+      "rows": [
+        "...ooooo...",
+        "..occccco..",
+        ".ocwcccCCo.",
+        "ocwwcccCCCo",
+        ".occccCCCo.",
+        "..occcCCo..",
+        "...occCo...",
+        "....oCo....",
+        ".....o....."
+      ]
+    }
+  },
+  "anims": {}
+}
