@@ -19,6 +19,13 @@ def _whole(what: str, value: int) -> int:
     return value
 
 
+def _whole_number(what: str, value: int) -> int:
+    """`value` if it is a whole number: an int, and not a bool."""
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise PixelRowsError(f"{what} must be a whole number, got {value!r}")
+    return value
+
+
 def _one_character(ch: str) -> str:
     """`ch` if it is one character that is not whitespace."""
     if not isinstance(ch, str) or len(ch) != 1 or ch.isspace():
@@ -41,7 +48,8 @@ class Canvas:
     It is rows of characters, one for each pixel, and it starts all '.'. Every
     drawing method changes the canvas and returns it, so calls chain. Whatever
     falls outside the canvas is dropped without an error. `ch` is one character
-    that is not whitespace; '.' is allowed and erases.
+    that is not whitespace; '.' is allowed and erases. Every coordinate and size
+    is a whole number, below 0 included.
     """
 
     def __init__(self, width: int, height: int):
@@ -76,6 +84,8 @@ class Canvas:
 
     def get(self, x: int, y: int) -> str:
         """The character at (x, y), or '.' anywhere outside the canvas."""
+        _whole_number("x", x)
+        _whole_number("y", y)
         if 0 <= y < self.height and 0 <= x < self.width:
             return self._grid[y][x]
         return TRANSPARENT
@@ -87,11 +97,15 @@ class Canvas:
 
     def px(self, x: int, y: int, ch: str) -> Canvas:
         """Paints the one cell at (x, y)."""
+        _whole_number("x", x)
+        _whole_number("y", y)
         self._put(x, y, _one_character(ch))
         return self
 
     def rect(self, x: int, y: int, w: int, h: int, ch: str) -> Canvas:
         """Fills a box `w` wide and `h` tall, top-left corner at (x, y). A size of 0 or less draws nothing."""
+        for what, value in (("x", x), ("y", y), ("w", w), ("h", h)):
+            _whole_number(what, value)
         ch = _one_character(ch)
         for cy in range(max(y, 0), min(y + h, self.height)):
             for cx in range(max(x, 0), min(x + w, self.width)):
@@ -104,6 +118,8 @@ class Canvas:
 
         The cells are the same whichever end is given first.
         """
+        for what, value in (("x0", x0), ("y0", y0), ("x1", x1), ("y1", y1)):
+            _whole_number(what, value)
         ch = _one_character(ch)
         steep = abs(y1 - y0) > abs(x1 - x0)
         if steep:
@@ -134,6 +150,8 @@ class Canvas:
         another canvas. A list of strings keeps the rules of a sprite's rows. `flip` lays
         the rows down turned left to right.
         """
+        _whole_number("x", x)
+        _whole_number("y", y)
         if isinstance(rows, Canvas):
             rows = rows.rows()
         elif isinstance(rows, Sprite):

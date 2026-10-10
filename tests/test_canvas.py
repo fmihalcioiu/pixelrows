@@ -17,6 +17,24 @@ WITH_A_CHARACTER = (
     ("outline", lambda canvas, ch: canvas.outline(ch)),
 )
 
+# Every coordinate and size argument, with a call that hands it `n` on a canvas of 3 by 3.
+WITH_A_WHOLE_NUMBER = (
+    ("get", "x", lambda canvas, n: canvas.get(n, 1)),
+    ("get", "y", lambda canvas, n: canvas.get(1, n)),
+    ("px", "x", lambda canvas, n: canvas.px(n, 1, "o")),
+    ("px", "y", lambda canvas, n: canvas.px(1, n, "o")),
+    ("rect", "x", lambda canvas, n: canvas.rect(n, 0, 2, 2, "o")),
+    ("rect", "y", lambda canvas, n: canvas.rect(0, n, 2, 2, "o")),
+    ("rect", "w", lambda canvas, n: canvas.rect(0, 0, n, 2, "o")),
+    ("rect", "h", lambda canvas, n: canvas.rect(0, 0, 2, n, "o")),
+    ("line", "x0", lambda canvas, n: canvas.line(n, 0, 2, 2, "o")),
+    ("line", "y0", lambda canvas, n: canvas.line(0, n, 2, 2, "o")),
+    ("line", "x1", lambda canvas, n: canvas.line(0, 0, n, 2, "o")),
+    ("line", "y1", lambda canvas, n: canvas.line(0, 0, 2, n, "o")),
+    ("stamp", "x", lambda canvas, n: canvas.stamp(n, 0, ["xy"])),
+    ("stamp", "y", lambda canvas, n: canvas.stamp(0, n, ["xy"])),
+)
+
 
 class CanvasMakingTest(unittest.TestCase):
     def assert_refused(self, message, *args):
@@ -207,6 +225,101 @@ class CanvasCharacterTest(unittest.TestCase):
         self.assertEqual(Canvas.from_rows(full).px(1, 1, ".").rows(), ["ooo", "o.o", "ooo"])
         self.assertEqual(Canvas.from_rows(full).rect(0, 0, 2, 2, ".").rows(), ["..o", "..o", "ooo"])
         self.assertEqual(Canvas.from_rows(full).line(0, 0, 2, 2, ".").rows(), [".oo", "o.o", "oo."])
+
+
+class CanvasWholeNumberTest(unittest.TestCase):
+    def assert_refused(self, n):
+        for method, argument, call in WITH_A_WHOLE_NUMBER:
+            with self.subTest(method=method, argument=argument, n=n):
+                canvas = Canvas.from_rows(LETTERS)
+                with self.assertRaises(PixelRowsError) as caught:
+                    call(canvas, n)
+                self.assertEqual(str(caught.exception), f"{argument} must be a whole number, got {n!r}")
+                self.assertEqual(canvas.rows(), LETTERS)
+
+    def test_float_is_refused(self):
+        self.assert_refused(1.5)
+        self.assert_refused(-0.5)
+
+    def test_float_with_nothing_after_the_point_is_refused(self):
+        self.assert_refused(1.0)
+        self.assert_refused(0.0)
+
+    def test_float_that_is_not_finite_is_refused(self):
+        self.assert_refused(float("inf"))
+        self.assert_refused(float("nan"))
+
+    def test_bool_is_refused(self):
+        self.assert_refused(True)
+        self.assert_refused(False)
+
+    def test_what_is_not_a_number_is_refused(self):
+        self.assert_refused("1")
+        self.assert_refused(None)
+        self.assert_refused([1])
+
+    def test_halved_width_is_named_with_its_value(self):
+        canvas = Canvas(8, 8)
+        with self.assertRaises(PixelRowsError) as caught:
+            canvas.px(canvas.width / 2, 0, "o")
+        self.assertEqual(str(caught.exception), "x must be a whole number, got 4.0")
+        self.assertEqual(canvas.px(canvas.width // 2, 0, "o").rows()[0], "....o...")
+
+    def test_error_is_a_value_error(self):
+        with self.assertRaises(ValueError):
+            Canvas(3, 3).px(1.5, 1, "o")
+
+    def test_first_argument_refused_is_the_one_named(self):
+        canvas = Canvas(3, 3)
+        refused = (
+            ("x", lambda: canvas.get(0.5, 0.5)),
+            ("x", lambda: canvas.px(0.5, 0.5, "o")),
+            ("y", lambda: canvas.rect(0, 0.5, 0.5, 0.5, "o")),
+            ("w", lambda: canvas.rect(0, 0, 0.5, 0.5, "o")),
+            ("y0", lambda: canvas.line(0, 0.5, 0.5, 0.5, "o")),
+            ("x1", lambda: canvas.line(0, 0, 0.5, 0.5, "o")),
+            ("x", lambda: canvas.stamp(0.5, 0.5, ["xy"])),
+        )
+        for argument, call in refused:
+            with self.subTest(argument=argument):
+                with self.assertRaises(PixelRowsError) as caught:
+                    call()
+                self.assertEqual(str(caught.exception), f"{argument} must be a whole number, got 0.5")
+
+    def test_number_is_checked_when_nothing_would_be_drawn(self):
+        canvas = Canvas(3, 3)
+        with self.assertRaises(PixelRowsError):
+            canvas.px(9.5, 9, "o")
+        with self.assertRaises(PixelRowsError):
+            canvas.rect(0, 0, 0, 0.5, "o")
+        with self.assertRaises(PixelRowsError):
+            canvas.line(9, 9, 12.5, 9, "o")
+        with self.assertRaises(PixelRowsError):
+            canvas.stamp(9, 9.5, ["xy"])
+
+    def test_number_is_checked_for_a_stamped_sprite_and_a_stamped_canvas(self):
+        for stamped in (Sprite("s", ["xy"]), Canvas.from_rows(["xy"])):
+            with self.subTest(stamped=type(stamped).__name__):
+                canvas = Canvas.from_rows(LETTERS)
+                with self.assertRaises(PixelRowsError) as caught:
+                    canvas.stamp(1, 1.0, stamped)
+                self.assertEqual(str(caught.exception), "y must be a whole number, got 1.0")
+                self.assertEqual(canvas.rows(), LETTERS)
+
+    def test_any_int_passes(self):
+        for method, argument, call in WITH_A_WHOLE_NUMBER:
+            for n in (-100, -3, -1, 0, 1, 2, 3, 100):
+                with self.subTest(method=method, argument=argument, n=n):
+                    call(Canvas.from_rows(LETTERS), n)
+
+    def test_int_below_0_reads_and_draws_as_before(self):
+        canvas = Canvas.from_rows(LETTERS)
+        self.assertEqual(canvas.get(-1, -1), ".")
+        self.assertEqual(canvas.px(-1, 1, "o").rows(), LETTERS)
+        self.assertEqual(canvas.rect(1, 1, -2, -2, "o").rows(), LETTERS)
+        self.assertEqual(Canvas(3, 3).rect(-1, -1, 2, 2, "o").rows(), ["o..", "...", "..."])
+        self.assertEqual(Canvas(3, 3).line(-2, -2, 0, 0, "o").rows(), ["o..", "...", "..."])
+        self.assertEqual(Canvas(3, 3).stamp(-1, -1, ["ab", "cd"]).rows(), ["d..", "...", "..."])
 
 
 class CanvasPxTest(unittest.TestCase):
