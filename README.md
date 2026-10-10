@@ -172,3 +172,7 @@ The skill calls `python -m pixelrows`, so the package has to be installed where 
 ```
 python -m unittest discover -s tests
 ```
+
+## Licence
+
+MIT. See `LICENSE`.
