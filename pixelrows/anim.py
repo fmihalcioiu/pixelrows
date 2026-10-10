@@ -1,7 +1,6 @@
 """An anim as pictures: one image a frame, the time each frame shows, and the clip as a GIF file."""
 from __future__ import annotations
 
-import math
 import os
 import struct
 from pathlib import Path
@@ -11,7 +10,7 @@ from .gif import encode_gif
 from .image import RGBA, Image
 from .palette import RGB
 from .render import render_sprite
-from .spriteset import Anim, SpriteSet
+from .spriteset import FPS_MAX, FPS_MIN, Anim, SpriteSet
 
 #: The most colours a GIF's table holds.
 _MAX_COLOURS = 256
@@ -43,17 +42,14 @@ def delays(fps: float, count: int) -> list[int]:
     both rounded, so the clip as a whole runs at `fps` however the single
     frames round. No time is below 2.
     """
-    if isinstance(fps, bool) or not isinstance(fps, (int, float)) or not math.isfinite(fps) or fps <= 0:
-        raise PixelRowsError(f"fps must be a number above 0, got {fps!r}")
+    if isinstance(fps, bool) or not isinstance(fps, (int, float)) or not FPS_MIN <= fps <= FPS_MAX:
+        raise PixelRowsError(f"fps must be from {FPS_MIN} to {FPS_MAX}, got {fps!r}")
     if not isinstance(count, int) or isinstance(count, bool) or count < 1:
         raise PixelRowsError(f"count must be a whole number of 1 or more, got {count!r}")
-    try:
-        return [
-            max(_SHORTEST, round((i + 1) * 100 / fps) - round(i * 100 / fps))
-            for i in range(count)
-        ]
-    except OverflowError:
-        raise PixelRowsError(f"fps {fps!r} is too low to time a frame") from None
+    return [
+        max(_SHORTEST, round((i + 1) * 100 / fps) - round(i * 100 / fps))
+        for i in range(count)
+    ]
 
 
 def gif_bytes(spriteset: SpriteSet, anim: Anim | str, scale: int = 1,

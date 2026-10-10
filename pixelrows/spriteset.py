@@ -12,6 +12,10 @@ from .errors import PixelRowsError
 from .palette import RGB, Palette
 from .sprite import Sprite
 
+#: The slowest and the fastest an anim may play, in frames a second.
+FPS_MIN = 0.01
+FPS_MAX = 1000
+
 _TOP_KEYS = ("palette", "sprites", "anims")
 _SPRITE_KEYS = ("rows", "palette")
 _ANIM_KEYS = ("frames", "fps")
@@ -44,8 +48,8 @@ class Anim:
         for index, frame in enumerate(frames):
             if not isinstance(frame, str):
                 raise PixelRowsError(f"{where}: frame {index} is not a string, got {frame!r}")
-        if not _is_number(self.fps) or not self.fps > 0:
-            raise PixelRowsError(f"{where}: fps is a number above 0, got {self.fps!r}")
+        if not _is_number(self.fps) or not FPS_MIN <= self.fps <= FPS_MAX:
+            raise PixelRowsError(f"{where}: fps must be from {FPS_MIN} to {FPS_MAX}, got {self.fps!r}")
         object.__setattr__(self, "frames", frames)
 
     @property

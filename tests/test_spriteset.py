@@ -1,4 +1,5 @@
 import json
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,7 +7,7 @@ from pathlib import Path
 from pixelrows.errors import PixelRowsError
 from pixelrows.palette import Palette
 from pixelrows.sprite import Sprite
-from pixelrows.spriteset import Anim, SpriteSet
+from pixelrows.spriteset import FPS_MAX, FPS_MIN, Anim, SpriteSet
 
 PALETTE = {"o": "#1a1a22", "g": "#58a84c"}
 BLOB_0 = ["..oo..", ".oggo.", "oggggo", "oooooo"]
@@ -108,21 +109,43 @@ class AnimTest(unittest.TestCase):
         self.assert_refused("anim 'walk': frames are a list of sprite names, got 4", "walk", 4, 10)
 
     def test_fps_must_be_above_zero(self):
-        self.assert_refused("anim 'walk': fps is a number above 0, got 0", "walk", ["a"], 0)
-        self.assert_refused("anim 'walk': fps is a number above 0, got 0.0", "walk", ["a"], 0.0)
-        self.assert_refused("anim 'walk': fps is a number above 0, got -2", "walk", ["a"], -2)
+        self.assert_refused("anim 'walk': fps must be from 0.01 to 1000, got 0", "walk", ["a"], 0)
+        self.assert_refused("anim 'walk': fps must be from 0.01 to 1000, got 0.0", "walk", ["a"], 0.0)
+        self.assert_refused("anim 'walk': fps must be from 0.01 to 1000, got -2", "walk", ["a"], -2)
 
     def test_fps_must_be_a_number(self):
-        self.assert_refused("anim 'walk': fps is a number above 0, got '10'", "walk", ["a"], "10")
-        self.assert_refused("anim 'walk': fps is a number above 0, got None", "walk", ["a"], None)
+        self.assert_refused("anim 'walk': fps must be from 0.01 to 1000, got '10'", "walk", ["a"], "10")
+        self.assert_refused("anim 'walk': fps must be from 0.01 to 1000, got None", "walk", ["a"], None)
 
     def test_a_bool_is_not_an_fps(self):
-        self.assert_refused("anim 'walk': fps is a number above 0, got True", "walk", ["a"], True)
-        self.assert_refused("anim 'walk': fps is a number above 0, got False", "walk", ["a"], False)
+        self.assert_refused("anim 'walk': fps must be from 0.01 to 1000, got True", "walk", ["a"], True)
+        self.assert_refused("anim 'walk': fps must be from 0.01 to 1000, got False", "walk", ["a"], False)
 
     def test_fps_must_be_finite(self):
-        self.assert_refused("anim 'walk': fps is a number above 0, got inf", "walk", ["a"], float("inf"))
-        self.assert_refused("anim 'walk': fps is a number above 0, got nan", "walk", ["a"], float("nan"))
+        self.assert_refused("anim 'walk': fps must be from 0.01 to 1000, got inf", "walk", ["a"], float("inf"))
+        self.assert_refused("anim 'walk': fps must be from 0.01 to 1000, got nan", "walk", ["a"], float("nan"))
+
+    def test_fps_limits_are_a_hundredth_and_a_thousand(self):
+        self.assertEqual(FPS_MIN, 0.01)
+        self.assertEqual(FPS_MAX, 1000)
+
+    def test_fps_may_be_either_limit(self):
+        self.assertEqual(Anim("walk", ["a"], FPS_MIN).fps, 0.01)
+        self.assertEqual(Anim("walk", ["a"], FPS_MAX).fps, 1000)
+        self.assertEqual(Anim("walk", ["a"], 1000.0).fps, 1000)
+        self.assertEqual(Anim("walk", ["a"], FPS_MIN).duration, 100.0)
+        self.assertEqual(Anim("walk", ["a"], FPS_MAX).duration, 0.001)
+
+    def test_fps_just_below_or_just_above_the_limits_is_refused(self):
+        for bad in (math.nextafter(FPS_MIN, 0), 0.0099, math.nextafter(FPS_MAX, math.inf), 1000.5, 1001):
+            with self.subTest(bad=bad):
+                self.assert_refused(f"anim 'walk': fps must be from 0.01 to 1000, got {bad!r}", "walk", ["a"], bad)
+
+    def test_fps_far_outside_any_use_is_refused(self):
+        self.assert_refused("anim 'walk': fps must be from 0.01 to 1000, got 1e-320", "walk", ["a"], 1e-320)
+        for bad in (10 ** 400, 10 ** 309, 1e300, -(10 ** 400)):
+            with self.subTest(bad=bad):
+                self.assert_refused(f"anim 'walk': fps must be from 0.01 to 1000, got {bad!r}", "walk", ["a"], bad)
 
 
 class SpriteSetMakingTest(unittest.TestCase):
@@ -570,6 +593,12 @@ class FromDictTest(unittest.TestCase):
         spriteset = SpriteSet.from_dict({"anims": {"walk": {"frames": ["a"], "fps": 7.5}}})
         self.assertEqual(spriteset.anim("walk").fps, 7.5)
 
+    def test_fps_at_either_limit_is_read(self):
+        for fps in (FPS_MIN, FPS_MAX, 1000.0):
+            with self.subTest(fps=fps):
+                spriteset = SpriteSet.from_dict({"anims": {"walk": {"frames": ["a"], "fps": fps}}})
+                self.assertEqual(spriteset.anim("walk").fps, fps)
+
     def test_unknown_key_at_the_top(self):
         self.assert_refused(
             "unknown key 'sprite' at the top (the keys are 'palette', 'sprites', 'anims')",
@@ -638,11 +667,33 @@ class FromDictTest(unittest.TestCase):
     def test_errors_from_anim_pass_through(self):
         self.assert_refused("anim 'walk': there are no frames", {"anims": {"walk": {"frames": [], "fps": 3}}})
         self.assert_refused(
-            "anim 'walk': fps is a number above 0, got 0", {"anims": {"walk": {"frames": ["a"], "fps": 0}}}
+            "anim 'walk': fps must be from 0.01 to 1000, got 0", {"anims": {"walk": {"frames": ["a"], "fps": 0}}}
         )
         self.assert_refused(
-            "anim 'walk': fps is a number above 0, got -1.5", {"anims": {"walk": {"frames": ["a"], "fps": -1.5}}}
+            "anim 'walk': fps must be from 0.01 to 1000, got -1.5", {"anims": {"walk": {"frames": ["a"], "fps": -1.5}}}
         )
+
+    def test_fps_outside_the_limits_is_refused(self):
+        for bad in (math.nextafter(FPS_MIN, 0), math.nextafter(FPS_MAX, math.inf), 1001, 10 ** 400, 1e-320):
+            with self.subTest(bad=bad):
+                self.assert_refused(
+                    f"anim 'walk': fps must be from 0.01 to 1000, got {bad!r}",
+                    {"anims": {"walk": {"frames": ["a"], "fps": bad}}},
+                )
+
+    def test_fps_that_is_infinite_or_not_a_number_or_a_bool_is_refused(self):
+        for bad in (float("inf"), float("-inf"), float("nan"), True):
+            with self.subTest(bad=bad):
+                self.assert_refused(
+                    "anims.walk.fps must be a number", {"anims": {"walk": {"frames": ["a"], "fps": bad}}}
+                )
+
+    def test_fps_written_in_json_far_outside_any_use_is_refused(self):
+        for written in ("1e-320", "1" + "0" * 309, "1e999", "Infinity", "NaN", "true"):
+            with self.subTest(written=written):
+                data = json.loads('{"anims": {"walk": {"frames": ["a"], "fps": ' + written + "}}}")
+                with self.assertRaises(PixelRowsError):
+                    SpriteSet.from_dict(data)
 
     def test_errors_from_palette_pass_through(self):
         self.assert_refused("not a colour: 'black' (expected '#rrggbb')", {"palette": {"o": "black"}})

@@ -1,3 +1,4 @@
+import math
 import struct
 import tempfile
 import unittest
@@ -9,7 +10,7 @@ from pixelrows.errors import PixelRowsError
 from pixelrows.image import Image
 from pixelrows.render import render_sprite
 from pixelrows.sprite import Sprite
-from pixelrows.spriteset import SpriteSet
+from pixelrows.spriteset import FPS_MAX, FPS_MIN, SpriteSet
 
 DARK = (26, 26, 34)
 GREEN = (88, 168, 76)
@@ -300,7 +301,7 @@ class DelaysTest(unittest.TestCase):
         self.assertEqual(delays(60, 12), [2] * 12)
 
     def test_no_fps_however_high_goes_below_2(self):
-        for fps in (50, 51, 75, 100, 144, 1000, 1e9):
+        for fps in (50, 51, 75, 100, 144, 999.5, 1000):
             with self.subTest(fps=fps):
                 self.assertEqual(delays(fps, 9), [2] * 9)
 
@@ -337,14 +338,34 @@ class DelaysTest(unittest.TestCase):
     def test_errors_say_what_was_given(self):
         with self.assertRaises(PixelRowsError) as caught:
             delays(0, 3)
-        self.assertEqual(str(caught.exception), "fps must be a number above 0, got 0")
+        self.assertEqual(str(caught.exception), "fps must be from 0.01 to 1000, got 0")
         with self.assertRaises(PixelRowsError) as caught:
             delays(10, 0)
         self.assertEqual(str(caught.exception), "count must be a whole number of 1 or more, got 0")
 
     def test_fps_too_low_for_a_frame_to_be_timed_is_refused(self):
-        with self.assertRaisesRegex(PixelRowsError, "too low"):
+        with self.assertRaises(PixelRowsError) as caught:
             delays(1e-310, 2)
+        self.assertEqual(str(caught.exception), "fps must be from 0.01 to 1000, got 1e-310")
+
+    def test_fps_at_either_limit_is_timed(self):
+        self.assertEqual(delays(FPS_MIN, 3), [10000, 10000, 10000])
+        self.assertEqual(delays(FPS_MAX, 3), [2, 2, 2])
+        self.assertEqual(delays(1000.0, 3), [2, 2, 2])
+
+    def test_fps_just_below_or_just_above_the_limits_is_refused(self):
+        for bad in (math.nextafter(FPS_MIN, 0), 0.0099, math.nextafter(FPS_MAX, math.inf), 1000.5, 1001):
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError) as caught:
+                    delays(bad, 3)
+                self.assertEqual(str(caught.exception), f"fps must be from 0.01 to 1000, got {bad!r}")
+
+    def test_fps_far_outside_any_use_is_refused(self):
+        for bad in (10 ** 400, 10 ** 309, 1e-320, float("inf"), float("nan"), True):
+            with self.subTest(bad=bad):
+                with self.assertRaises(PixelRowsError) as caught:
+                    delays(bad, 3)
+                self.assertEqual(str(caught.exception), f"fps must be from 0.01 to 1000, got {bad!r}")
 
 
 class GifBytesTest(unittest.TestCase):
