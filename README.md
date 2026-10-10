@@ -25,7 +25,7 @@ Since the art is text, it can be written by hand, by a script or by a language m
 
 ![The example sprites on a contact sheet](examples/critters_sheet.png)
 
-![The slime's idle clip](examples/slime_idle.gif) ![The coin's spin](examples/coin_spin.gif)
+![The slime's idle clip](examples/slime_idle.gif) ![The chest opening](examples/chest_open.gif) ![The coin's spin](examples/coin_spin.gif)
 
 ## Running it
 

@@ -1,0 +1,129 @@
+{
+  "palette": {
+    "o": "#1b1420",
+    "W": "#5d3a00",
+    "w": "#9d621e",
+    "l": "#ce976c",
+    "M": "#855900",
+    "m": "#cb9400",
+    "y": "#ffda7d",
+    "d": "#2b1808"
+  },
+  "sprites": {
+    "chest_closed": {
+      "rows": [
+        "................",
+        "................",
+        "................",
+        "....oooooooo....",
+        "..oollwwwwwwoo..",
+        ".olmMwwwwwwmMWo.",
+        "olwmMwwwwwwmMwWo",
+        "olwmMwmmmmwmMwWo",
+        "oyymmmmmmmmmmmmo",
+        "olwmMwymmMwmMwWo",
+        "olwmMwmooMwmMwWo",
+        "olwmMwMMMMwmMwWo",
+        "olwmMwwwwwwmMwWo",
+        "olwmMwwwwwwmMwWo",
+        "oWWmMWWWWWWmMWWo",
+        ".oooooooooooooo."
+      ]
+    },
+    "chest_crack": {
+      "rows": [
+        "................",
+        "................",
+        "....oooooooo....",
+        "..oollwwwwwwoo..",
+        ".olmMwwwwwwmMWo.",
+        "olwmMwwwwwwmMwWo",
+        "olwmMwmmmmwmMwWo",
+        "olddyddddddddyWo",
+        "oyymmmmmmmmmmmmo",
+        "olwmMwymmMwmMwWo",
+        "olwmMwmooMwmMwWo",
+        "olwmMwMMMMwmMwWo",
+        "olwmMwwwwwwmMwWo",
+        "olwmMwwwwwwmMwWo",
+        "oWWmMWWWWWWmMWWo",
+        ".oooooooooooooo."
+      ]
+    },
+    "chest_mid": {
+      "rows": [
+        "................",
+        "..ooooooooooo...",
+        ".olllllllllwwoo.",
+        "ollmMwwwwwwmMwWo",
+        "oWWmMWWWWWWmMWWo",
+        "owddddddddddddWo",
+        "owdddmyyymmdddWo",
+        "owdmyymyyymymdWo",
+        "oyymmmmmmmmmmmmo",
+        "olwmMwymmMwmMwWo",
+        "olwmMwmooMwmMwWo",
+        "olwmMwMMMMwmMwWo",
+        "olwmMwwwwwwmMwWo",
+        "olwmMwwwwwwmMwWo",
+        "oWWmMWWWWWWmMWWo",
+        ".oooooooooooooo."
+      ]
+    },
+    "chest_open": {
+      "rows": [
+        "...oooooooooo...",
+        "..owwwwwwwwwwo..",
+        ".owmMWWWWWWmMWo.",
+        ".owmMWWWWWWmMWo.",
+        ".owmMWWWWWWmMWo.",
+        "owddddddddddddWo",
+        "owdddmyyymmdddWo",
+        "owdmyymyyymymdWo",
+        "oyymmmmmmmmmmmmo",
+        "olwmMwymmMwmMwWo",
+        "olwmMwmooMwmMwWo",
+        "olwmMwMMMMwmMwWo",
+        "olwmMwwwwwwmMwWo",
+        "olwmMwwwwwwmMwWo",
+        "oWWmMWWWWWWmMWWo",
+        ".oooooooooooooo."
+      ]
+    },
+    "chest_open2": {
+      "rows": [
+        "...oooooooooo...",
+        "..owwwwwwwwwwo..",
+        ".owmMWWWWWWmMWo.",
+        ".owmMWWWWWWmMWo.",
+        ".owmMWWWWWWmMWo.",
+        "owddddddddddddWo",
+        "owdddmyyymydddWo",
+        "owdmyymyyymmmdWo",
+        "oyymmmmmmmmmmmmo",
+        "olwmMwymmMwmMwWo",
+        "olwmMwmooMwmMwWo",
+        "olwmMwMMMMwmMwWo",
+        "olwmMwwwwwwmMwWo",
+        "olwmMwwwwwwmMwWo",
+        "oWWmMWWWWWWmMWWo",
+        ".oooooooooooooo."
+      ]
+    }
+  },
+  "anims": {
+    "chest_open": {
+      "frames": [
+        "chest_closed",
+        "chest_closed",
+        "chest_crack",
+        "chest_mid",
+        "chest_open",
+        "chest_open2",
+        "chest_open",
+        "chest_open2"
+      ],
+      "fps": 6
+    }
+  }
+}
