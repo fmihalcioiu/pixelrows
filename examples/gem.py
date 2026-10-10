@@ -8,9 +8,7 @@ It prints the rows it drew and writes gem.json and gem.png beside this file.
 """
 from pathlib import Path
 
-from pixelrows.canvas import Canvas
-from pixelrows.render import render_sprite
-from pixelrows.spriteset import SpriteSet
+from pixelrows import Canvas, SpriteSet, render_sprite
 
 HERE = Path(__file__).resolve().parent
 
