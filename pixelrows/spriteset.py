@@ -16,6 +16,9 @@ _TOP_KEYS = ("palette", "sprites", "anims")
 _SPRITE_KEYS = ("rows", "palette")
 _ANIM_KEYS = ("frames", "fps")
 
+#: The byte order mark some editors write at the start of a UTF-8 file. It is not part of the JSON.
+_BYTE_ORDER_MARK = "\ufeff"
+
 
 @dataclass(frozen=True)
 class Anim:
@@ -193,7 +196,7 @@ class SpriteSet:
         except UnicodeDecodeError as error:
             raise PixelRowsError(f"{path}: not UTF-8 at byte {error.start}") from None
         try:
-            data = json.loads(text)
+            data = json.loads(text.removeprefix(_BYTE_ORDER_MARK))
         except json.JSONDecodeError as error:
             raise PixelRowsError(
                 f"{path}: not JSON at line {error.lineno}, column {error.colno}: {error.msg}"

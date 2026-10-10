@@ -24,6 +24,9 @@ FILE = {
     },
 }
 
+#: The bytes some editors write at the start of a UTF-8 file.
+BYTE_ORDER_MARK = b"\xef\xbb\xbf"
+
 
 def blob_set():
     """The same set as FILE, built in code."""
@@ -751,6 +754,14 @@ class LoadTest(unittest.TestCase):
         text = json.dumps(FILE, indent=2).replace("\n", "\r\n") + "\r\n"
         self.assertEqual(SpriteSet.load(self.write("blob.json", text)), blob_set())
 
+    def test_reads_a_file_that_starts_with_a_byte_order_mark_as_the_file_without_it(self):
+        text = json.dumps(FILE, indent=2) + "\n"
+        plain = self.write("plain.json", text)
+        marked = self.folder / "marked.json"
+        marked.write_bytes(BYTE_ORDER_MARK + text.encode("utf-8"))
+        self.assertEqual(SpriteSet.load(marked), SpriteSet.load(plain))
+        self.assertEqual(SpriteSet.load(marked), blob_set())
+
     def test_bad_json_gives_the_path_the_line_and_the_column(self):
         path = self.write("broken.json", '{\n  "palette": {}\n  "sprites": {}\n}\n')
         with self.assertRaises(PixelRowsError) as caught:
@@ -851,6 +862,15 @@ class SaveTest(unittest.TestCase):
         data = path.read_bytes()
         self.assertTrue(data.endswith(b"}\n"))
         self.assertFalse(data.endswith(b"\n\n"))
+
+    def test_file_does_not_start_with_a_byte_order_mark(self):
+        marked = self.folder / "marked.json"
+        marked.write_bytes(BYTE_ORDER_MARK + json.dumps(FILE).encode("utf-8"))
+        path = self.folder / "blob.json"
+        for spriteset in (blob_set(), SpriteSet.load(marked)):
+            spriteset.save(path)
+            self.assertFalse(path.read_bytes().startswith(BYTE_ORDER_MARK))
+            self.assertTrue(path.read_bytes().startswith(b"{"))
 
     def test_each_row_sits_on_its_own_line(self):
         path = self.folder / "blob.json"
