@@ -1,13 +1,21 @@
 """Plain numbers about what is drawn, as data that goes straight to json.dumps."""
 from __future__ import annotations
 
-from .palette import Palette
+from collections.abc import Mapping
+
+from .errors import PixelRowsError
+from .palette import RGB, Palette
 from .sprite import Sprite
 from .spriteset import Anim, SpriteSet
 
 
-def sprite_info(sprite: Sprite, palette: Palette) -> dict:
-    """One sprite: its size, how much of it is painted and where, and its colours in order of first appearance."""
+def sprite_info(sprite: Sprite, palette: Palette | Mapping[str, str | RGB]) -> dict:
+    """
+    One sprite: its size, how much of it is painted and where, and its colours in order of first appearance.
+
+    `palette` is a `Palette` or a dict of character to colour.
+    """
+    palette = _as_palette(palette)
     bbox = sprite.bbox()
     return {
         "name": sprite.name,
@@ -45,6 +53,15 @@ def set_info(spriteset: SpriteSet) -> dict:
         "anims": [anim_info(spriteset, anim) for anim in spriteset.anims.values()],
         "problems": spriteset.problems(),
     }
+
+
+def _as_palette(palette: Palette | Mapping[str, str | RGB]) -> Palette:
+    """`palette` if it is a Palette, or the Palette made from a mapping of character to colour."""
+    if isinstance(palette, Palette):
+        return palette
+    if isinstance(palette, Mapping):
+        return Palette(palette)
+    raise PixelRowsError("palette must be a Palette or a dict of character to colour")
 
 
 def _shared_size(sprites: list[Sprite | None]) -> list[int] | None:

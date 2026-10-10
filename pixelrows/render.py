@@ -1,6 +1,8 @@
 """Drawing a sprite on an image: a block of colour for each painted cell."""
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from .errors import PixelRowsError
 from .image import Image
 from .palette import RGB, Palette
@@ -10,7 +12,7 @@ from .sprite import Sprite
 def draw_sprite(
     image: Image,
     sprite: Sprite,
-    palette: Palette,
+    palette: Palette | Mapping[str, str | RGB],
     x: int = 0,
     y: int = 0,
     scale: int = 1,
@@ -23,8 +25,9 @@ def draw_sprite(
     `palette`, and a '.' leaves what is underneath. `flip` draws the sprite
     turned left to right. What falls outside the image is dropped.
 
-    `palette` is the full palette to read against. PixelRowsError if it lacks
-    a character the sprite uses, raised before anything is drawn.
+    `palette` is the full palette to read against, a `Palette` or a dict of
+    character to colour. PixelRowsError if it lacks a character the sprite
+    uses, raised before anything is drawn.
     """
     _checked_scale(scale)
     colours = _colours(sprite, palette)
@@ -37,7 +40,7 @@ def draw_sprite(
 
 def render_sprite(
     sprite: Sprite,
-    palette: Palette,
+    palette: Palette | Mapping[str, str | RGB],
     scale: int = 1,
     background: str | RGB | None = None,
     flip: bool = False,
@@ -61,12 +64,22 @@ def _checked_scale(scale: int) -> int:
     return scale
 
 
-def _colours(sprite: Sprite, palette: Palette) -> dict[str, str]:
+def _as_palette(palette: Palette | Mapping[str, str | RGB]) -> Palette:
+    """`palette` if it is a Palette, or the Palette made from a mapping of character to colour."""
+    if isinstance(palette, Palette):
+        return palette
+    if isinstance(palette, Mapping):
+        return Palette(palette)
+    raise PixelRowsError("palette must be a Palette or a dict of character to colour")
+
+
+def _colours(sprite: Sprite, palette: Palette | Mapping[str, str | RGB]) -> dict[str, str]:
     """
     The colour of every character the sprite uses, as '#rrggbb'.
 
     PixelRowsError naming the sprite and every character the palette lacks.
     """
+    palette = _as_palette(palette)
     used = sprite.chars_used()
     missing = [ch for ch in used if ch not in palette]
     if missing:

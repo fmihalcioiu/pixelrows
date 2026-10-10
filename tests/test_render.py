@@ -1,4 +1,5 @@
 import unittest
+from types import MappingProxyType
 
 from pixelrows.errors import PixelRowsError
 from pixelrows.image import Image
@@ -23,6 +24,9 @@ LETTERS = {
 }
 
 PALETTE = Palette({"r": RED, "g": GREEN, "b": BLUE})
+
+# The same palette as a plain dict.
+PLAIN = {"r": RED, "g": GREEN, "b": BLUE}
 
 # Wider than it is tall, and not the same turned left to right or top to bottom.
 TILE = Sprite("tile", ["rg.", "..b"])
@@ -318,6 +322,92 @@ class PaletteReadTest(unittest.TestCase):
         with self.assertRaises(PixelRowsError):
             draw_sprite(image, Sprite("hat", ["rgx"]), PALETTE, 50, 50)
         self.assertEqual(image, Image(2, 1, WHITE))
+
+
+class PlainPaletteTest(unittest.TestCase):
+    REFUSED = (None, [("r", RED)], ("r", RED), {"r", "g", "b"}, RED, 7, TILE)
+    MESSAGE = "palette must be a Palette or a dict of character to colour"
+
+    def test_render_sprite_takes_a_dict_as_it_takes_a_palette(self):
+        self.assertEqual(rows(render_sprite(TILE, PLAIN)), ["rg.", "..b"])
+        for scale in (1, 3):
+            for flip in (False, True):
+                with self.subTest(scale=scale, flip=flip):
+                    self.assertEqual(
+                        render_sprite(TILE, PLAIN, scale, WHITE, flip),
+                        render_sprite(TILE, PALETTE, scale, WHITE, flip),
+                    )
+
+    def test_draw_sprite_takes_a_dict_as_it_takes_a_palette(self):
+        for scale in (1, 2):
+            for flip in (False, True):
+                with self.subTest(scale=scale, flip=flip):
+                    image = Image(8, 6, WHITE)
+                    draw_sprite(image, TILE, PLAIN, 1, 1, scale, flip)
+                    expected = Image(8, 6, WHITE)
+                    draw_sprite(expected, TILE, PALETTE, 1, 1, scale, flip)
+                    self.assertEqual(image, expected)
+
+    def test_colour_in_a_dict_is_read_as_a_palette_reads_it(self):
+        image = render_sprite(Sprite("dot", ["ab"]), {"a": "#ABC", "b": (16, 32, 48)})
+        self.assertEqual(image.data, bytearray([170, 187, 204, 255, 16, 32, 48, 255]))
+
+    def test_any_mapping_is_taken(self):
+        self.assertEqual(render_sprite(TILE, MappingProxyType(PLAIN)), render_sprite(TILE, PALETTE))
+
+    def test_dict_is_left_as_it_was(self):
+        plain = {"r": "#F00", "g": GREEN, "b": BLUE}
+        render_sprite(TILE, plain)
+        draw_sprite(Image(3, 2), TILE, plain)
+        self.assertEqual(plain, {"r": "#F00", "g": GREEN, "b": BLUE})
+
+    def test_dict_that_lacks_a_character_is_refused_as_a_palette_is(self):
+        with self.assertRaises(PixelRowsError) as caught:
+            render_sprite(TILE, {"r": RED})
+        self.assertEqual(str(caught.exception), "sprite 'tile': the palette has no colour for 'g', 'b'")
+        with self.assertRaises(PixelRowsError) as caught:
+            draw_sprite(Image(3, 2), TILE, {})
+        self.assertEqual(str(caught.exception), "sprite 'tile': the palette has no colour for 'r', 'g', 'b'")
+
+    def test_error_of_a_dict_no_palette_can_be_made_from_passes_through(self):
+        for plain in ({"rg": RED}, {"r": "red"}, {"r": None}, {" ": RED}, {".": RED}, {7: RED}):
+            with self.subTest(plain=plain):
+                with self.assertRaises(PixelRowsError) as expected:
+                    Palette(plain)
+                with self.assertRaises(PixelRowsError) as caught:
+                    render_sprite(TILE, plain)
+                self.assertEqual(str(caught.exception), str(expected.exception))
+                with self.assertRaises(PixelRowsError) as caught:
+                    draw_sprite(Image(3, 2), TILE, plain)
+                self.assertEqual(str(caught.exception), str(expected.exception))
+
+    def test_render_sprite_refuses_what_is_not_a_palette_or_a_dict(self):
+        for refused in self.REFUSED:
+            with self.subTest(refused=refused):
+                with self.assertRaises(PixelRowsError) as caught:
+                    render_sprite(TILE, refused)
+                self.assertEqual(str(caught.exception), self.MESSAGE)
+
+    def test_draw_sprite_refuses_what_is_not_a_palette_or_a_dict(self):
+        for refused in self.REFUSED:
+            with self.subTest(refused=refused):
+                image = Image(3, 2, WHITE)
+                with self.assertRaises(PixelRowsError) as caught:
+                    draw_sprite(image, TILE, refused)
+                self.assertEqual(str(caught.exception), self.MESSAGE)
+                self.assertEqual(image, Image(3, 2, WHITE))
+
+    def test_palette_is_checked_when_nothing_is_painted(self):
+        blank = Sprite("blank", ["..", ".."])
+        with self.assertRaises(PixelRowsError):
+            render_sprite(blank, None)
+        with self.assertRaises(PixelRowsError):
+            draw_sprite(Image(2, 2), blank, None)
+        self.assertEqual(render_sprite(blank, {}), Image(2, 2))
+
+    def test_error_is_a_value_error(self):
+        with self.assertRaises(ValueError):
+            render_sprite(TILE, None)
 
 
 class ScaleTest(unittest.TestCase):

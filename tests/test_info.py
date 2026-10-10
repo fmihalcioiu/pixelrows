@@ -71,6 +71,46 @@ class SpriteInfoTest(unittest.TestCase):
             {"char": "q", "hex": None, "count": 1},
         ])
 
+    def test_palette_may_be_a_dict(self):
+        for name, rows in (("dot", [".....", ".oo..", ".ogo.", "....."]), ("odd", ["oq"]), ("blank", ["..."])):
+            with self.subTest(sprite=name):
+                sprite = Sprite(name, rows)
+                self.assertEqual(sprite_info(sprite, PALETTE), sprite_info(sprite, Palette(PALETTE)))
+        self.assertEqual(sprite_info(Sprite("odd", ["oq"]), PALETTE)["colours"], [
+            {"char": "o", "hex": "#1a1a22", "count": 1},
+            {"char": "q", "hex": None, "count": 1},
+        ])
+
+    def test_colour_in_a_dict_is_given_as_lower_case_hex(self):
+        info = sprite_info(Sprite("dot", ["ab"]), {"a": "#ABC", "b": (16, 32, 48)})
+        self.assertEqual([colour["hex"] for colour in info["colours"]], ["#aabbcc", "#102030"])
+
+    def test_dict_is_left_as_it_was(self):
+        plain = {"o": "#1A1A22"}
+        sprite_info(Sprite("odd", ["oq"]), plain)
+        self.assertEqual(plain, {"o": "#1A1A22"})
+
+    def test_error_of_a_dict_no_palette_can_be_made_from_passes_through(self):
+        for plain in ({"og": "#1a1a22"}, {"o": "black"}, {"o": None}, {" ": "#1a1a22"}):
+            with self.subTest(plain=plain):
+                with self.assertRaises(PixelRowsError) as expected:
+                    Palette(plain)
+                with self.assertRaises(PixelRowsError) as caught:
+                    sprite_info(Sprite("dot", ["o"]), plain)
+                self.assertEqual(str(caught.exception), str(expected.exception))
+
+    def test_what_is_not_a_palette_or_a_dict_is_refused(self):
+        sprite = Sprite("dot", ["o"])
+        for refused in (None, [("o", "#1a1a22")], {"o", "g"}, "#1a1a22", 7, sprite):
+            with self.subTest(refused=refused):
+                with self.assertRaises(PixelRowsError) as caught:
+                    sprite_info(sprite, refused)
+                self.assertEqual(str(caught.exception), "palette must be a Palette or a dict of character to colour")
+
+    def test_palette_is_checked_when_nothing_is_painted(self):
+        with self.assertRaises(PixelRowsError):
+            sprite_info(Sprite("blank", ["...", "..."]), None)
+
 
 class AnimInfoTest(unittest.TestCase):
     def test_every_key_and_its_value_for_a_good_clip(self):
